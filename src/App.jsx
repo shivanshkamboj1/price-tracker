@@ -8,6 +8,7 @@ import Header from './components/Header'
 import Hero from './components/Hero'
 import LiquidCursor from './components/LiquidCursor'
 import Projects from './components/Projects'
+import ScrollPet from './components/ScrollPet'
 import Stack from './components/Stack'
 import { content } from './data/content'
 import { useScrollFade } from './hooks/useScrollFade'
@@ -58,6 +59,7 @@ export default function App() {
       </main>
       <Footer />
       <BackToTop />
+      <ScrollPet />
       <LiquidCursor />
     </>
   )
