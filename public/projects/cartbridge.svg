@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" width="1280" height="800" role="img"
+     aria-label="Dark dashboard interface showing cart sync activity and analytics graphs">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1220" />
+      <stop offset="0.55" stop-color="#101a2e" />
+      <stop offset="1" stop-color="#0a0f1a" />
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#2e5bff" stop-opacity="0.35" />
+      <stop offset="1" stop-color="#54d5ff" />
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#54d5ff" />
+      <stop offset="1" stop-color="#b06cff" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.25" cy="0.2" r="0.7">
+      <stop offset="0" stop-color="#2e5bff" stop-opacity="0.45" />
+      <stop offset="1" stop-color="#2e5bff" stop-opacity="0" />
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1" />
+    </pattern>
+  </defs>
+
+  <rect width="1280" height="800" fill="url(#bg)" />
+  <rect width="1280" height="800" fill="url(#grid)" />
+  <rect width="1280" height="800" fill="url(#glow)" />
+
+  <!-- sidebar -->
+  <rect x="60" y="70" width="180" height="660" rx="20" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.08" />
+  <rect x="86" y="104" width="34" height="34" rx="10" fill="#54d5ff" fill-opacity="0.25" stroke="#54d5ff" stroke-opacity="0.5" />
+  <rect x="132" y="114" width="76" height="12" rx="6" fill="#ffffff" fill-opacity="0.35" />
+  <g fill="#ffffff" fill-opacity="0.13">
+    <rect x="86" y="180" width="128" height="12" rx="6" />
+    <rect x="86" y="216" width="104" height="12" rx="6" />
+    <rect x="86" y="252" width="118" height="12" rx="6" />
+    <rect x="86" y="288" width="92" height="12" rx="6" />
+  </g>
+  <rect x="76" y="170" width="4" height="32" rx="2" fill="#54d5ff" />
+
+  <!-- top stat cards -->
+  <g>
+    <rect x="280" y="70" width="300" height="150" rx="20" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.09" />
+    <rect x="310" y="102" width="120" height="10" rx="5" fill="#54d5ff" fill-opacity="0.7" />
+    <rect x="310" y="130" width="180" height="26" rx="8" fill="#ffffff" fill-opacity="0.55" />
+    <rect x="310" y="172" width="96" height="10" rx="5" fill="#ffffff" fill-opacity="0.18" />
+  </g>
+  <g>
+    <rect x="610" y="70" width="300" height="150" rx="20" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.09" />
+    <rect x="640" y="102" width="100" height="10" rx="5" fill="#b06cff" fill-opacity="0.75" />
+    <rect x="640" y="130" width="150" height="26" rx="8" fill="#ffffff" fill-opacity="0.55" />
+    <rect x="640" y="172" width="120" height="10" rx="5" fill="#ffffff" fill-opacity="0.18" />
+  </g>
+  <g>
+    <rect x="940" y="70" width="280" height="150" rx="20" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.09" />
+    <rect x="970" y="102" width="110" height="10" rx="5" fill="#35e08a" fill-opacity="0.8" />
+    <rect x="970" y="130" width="140" height="26" rx="8" fill="#ffffff" fill-opacity="0.55" />
+    <rect x="970" y="172" width="86" height="10" rx="5" fill="#ffffff" fill-opacity="0.18" />
+  </g>
+
+  <!-- bar chart -->
+  <rect x="280" y="250" width="600" height="330" rx="20" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.08" />
+  <rect x="312" y="284" width="150" height="12" rx="6" fill="#ffffff" fill-opacity="0.3" />
+  <g fill="url(#bar)">
+    <rect x="316" y="440" width="46" height="106" rx="10" />
+    <rect x="382" y="396" width="46" height="150" rx="10" />
+    <rect x="448" y="428" width="46" height="118" rx="10" />
+    <rect x="514" y="356" width="46" height="190" rx="10" />
+    <rect x="580" y="392" width="46" height="154" rx="10" />
+    <rect x="646" y="330" width="46" height="216" rx="10" />
+    <rect x="712" y="368" width="46" height="178" rx="10" />
+    <rect x="778" y="316" width="46" height="230" rx="10" />
+  </g>
+  <line x1="312" y1="548" x2="850" y2="548" stroke="#ffffff" stroke-opacity="0.12" stroke-width="2" />
+
+  <!-- line chart -->
+  <rect x="910" y="250" width="310" height="330" rx="20" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.08" />
+  <rect x="942" y="284" width="110" height="12" rx="6" fill="#ffffff" fill-opacity="0.3" />
+  <path d="M942 500 L992 452 L1042 470 L1092 396 L1142 418 L1192 342"
+        fill="none" stroke="url(#line)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+  <g fill="#54d5ff">
+    <circle cx="992" cy="452" r="6" />
+    <circle cx="1092" cy="396" r="6" />
+    <circle cx="1192" cy="342" r="6" fill="#b06cff" />
+  </g>
+
+  <!-- cart sync row -->
+  <rect x="280" y="612" width="940" height="118" rx="20" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.08" />
+  <g stroke="#54d5ff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="322" y="648" width="60" height="46" rx="8" />
+    <rect x="1122" y="640" width="34" height="62" rx="8" />
+    <path d="M400 671 H1104" stroke-opacity="0.35" stroke-dasharray="10 12" />
+    <path d="M732 655 l24 16 l-24 16" stroke="#b06cff" />
+  </g>
+  <rect x="420" y="660" width="240" height="12" rx="6" fill="#ffffff" fill-opacity="0.2" />
+  <rect x="420" y="686" width="150" height="10" rx="5" fill="#ffffff" fill-opacity="0.12" />
+</svg>
