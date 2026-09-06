@@ -13,18 +13,37 @@ export function useScrollFade() {
 
     sections.forEach((section) => section.classList.add('section--scroll-fade'))
 
+    const reveal = (section) => {
+      section.classList.add('section--scroll-visible')
+      observer.unobserve(section)
+    }
+
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (!entry.isIntersecting) return
-          entry.target.classList.add('section--scroll-visible')
-          observer.unobserve(entry.target)
+          reveal(entry.target)
         })
       },
-      { rootMargin: '0px 0px -12%', threshold: 0.08 }
+      { rootMargin: '0px 0px -5%', threshold: 0.01 }
     )
 
+    // An anchor jump lands on a section before the observer reports it, which
+    // would show the target as blank space mid-fade. Reveal it up front.
+    const revealHashTarget = () => {
+      const id = window.location.hash.slice(1)
+      if (!id) return
+      const target = document.getElementById(id)
+      if (target && sections.includes(target)) reveal(target)
+    }
+
     sections.forEach((section) => observer.observe(section))
-    return () => observer.disconnect()
+    revealHashTarget()
+    window.addEventListener('hashchange', revealHashTarget)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('hashchange', revealHashTarget)
+    }
   }, [])
 }
