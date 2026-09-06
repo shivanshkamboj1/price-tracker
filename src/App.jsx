@@ -6,6 +6,7 @@ import Experience from './components/Experience'
 import Footer from './components/Footer'
 import Header from './components/Header'
 import Hero from './components/Hero'
+import LiquidCursor from './components/LiquidCursor'
 import Projects from './components/Projects'
 import Stack from './components/Stack'
 import { content } from './data/content'
@@ -57,6 +58,7 @@ export default function App() {
       </main>
       <Footer />
       <BackToTop />
+      <LiquidCursor />
     </>
   )
 }

@@ -2577,3 +2577,131 @@ select {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ==========================================================================
+   Liquid glass cursor
+   ========================================================================== */
+.liquid-cursor {
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  position: fixed;
+  inset: 0;
+}
+
+.liquid-cursor--visible {
+  opacity: 1;
+}
+
+.liquid-cursor__orb,
+.liquid-cursor__dot {
+  will-change: transform;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* The lens body itself paints nothing across the middle — content underneath
+   stays readable. All the glass lives in the rim and the specular highlights. */
+.liquid-cursor__glass {
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  will-change: transform;
+  box-shadow:
+    inset 0 0 0 0.5px #ffffff40,
+    inset 0 1px 1px -0.5px #ffffff73,
+    inset 0 -1px 1px -0.5px #ffffff2e,
+    0 4px 14px -10px #0009;
+  transition: box-shadow 0.35s ease;
+  position: absolute;
+}
+
+/* Refraction: blur is masked to the rim only, the way light bends at a lens
+   edge while the centre of the glass stays clear. */
+.liquid-cursor__glass::before {
+  content: '';
+  border-radius: 50%;
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(3px) saturate(165%) brightness(1.05);
+  -webkit-backdrop-filter: blur(3px) saturate(165%) brightness(1.05);
+  -webkit-mask: radial-gradient(closest-side, #0000 54%, #000c 74%, #000 100%);
+  mask: radial-gradient(closest-side, #0000 54%, #000c 74%, #000 100%);
+}
+
+/* Specular: a bright glare at the top-left and a cool bounce at the lower right. */
+.liquid-cursor__glass::after {
+  content: '';
+  border-radius: 50%;
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 32% 26%, #ffffff4d, #fff0 34%),
+    radial-gradient(circle at 70% 76%, #54d5ff33, #0000 36%);
+  transition: opacity 0.35s ease;
+}
+
+.liquid-cursor__dot {
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: var(--text);
+  opacity: 0.8;
+  transition: opacity 0.25s ease;
+}
+
+/* Hover only strengthens the rim — the lens never fills in. */
+.liquid-cursor--hover .liquid-cursor__glass {
+  box-shadow:
+    inset 0 0 0 0.5px #ffffff5c,
+    inset 0 1px 1.5px -0.5px #ffffff8c,
+    inset 0 -1px 1.5px -0.5px #b8c3ff4d,
+    0 8px 24px -12px #2e5bff80;
+}
+
+.liquid-cursor--hover .liquid-cursor__dot,
+.liquid-cursor--text .liquid-cursor__dot {
+  opacity: 0;
+}
+
+:root[data-theme='light'] .liquid-cursor__glass {
+  box-shadow:
+    inset 0 0 0 0.5px #ffffffbf,
+    inset 0 1px 1px -0.5px #fff,
+    inset 0 -1px 1px -0.5px #11182714,
+    0 4px 14px -10px #11182759;
+}
+
+:root[data-theme='light'] .liquid-cursor__glass::after {
+  background:
+    radial-gradient(circle at 32% 26%, #ffffff8c, #fff0 34%),
+    radial-gradient(circle at 70% 76%, #335dff1f, #0000 36%);
+}
+
+:root[data-theme='light'] .liquid-cursor--hover .liquid-cursor__glass {
+  box-shadow:
+    inset 0 0 0 0.5px #fff,
+    inset 0 1px 1.5px -0.5px #fff,
+    inset 0 -1px 1.5px -0.5px #335dff33,
+    0 8px 24px -12px #335dff59;
+}
+
+/* Only hide the native cursor once the effect is actually mounted and running. */
+.has-liquid-cursor,
+.has-liquid-cursor * {
+  cursor: none;
+}
+
+.has-liquid-cursor :is(input, textarea, select, [contenteditable='true']) {
+  cursor: auto;
+}
+
+@media (hover: none), (pointer: coarse), (prefers-reduced-motion: reduce) {
+  .liquid-cursor {
+    display: none;
+  }
+}
