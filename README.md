@@ -1,5 +1,21 @@
 # Shivansh Kamboj — Portfolio
 
+> **The site is currently parked.** `index.html` is a standalone
+> "domain for sale" page and `npm run build` publishes only that page plus a
+> `robots.txt` that disallows crawling. The portfolio app is untouched but not
+> served: its entry lives in `index.portfolio.html`, the code in `src/`, and
+> its assets (resume PDF, project art) in `public/`, which the build no longer
+> copies.
+>
+> **To put the portfolio back:**
+>
+> ```bash
+> mv index.html index.parked.html
+> mv index.portfolio.html index.html
+> # vite.config.js: publicDir: 'static' -> 'public'
+> npm run build
+> ```
+
 A React + Vite portfolio modelled on the layout and design system of
 [allenkoch.dev](https://allenkoch.dev/), with all content driven by
 `ShivanshResume.pdf`.
