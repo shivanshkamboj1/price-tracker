@@ -12,6 +12,7 @@
     "start": "node dist/server.js",
     "start:worker": "node dist/worker.js",
     "start:scheduler": "node dist/scheduler.js",
+    "db:indexes": "node dist/scripts/createIndexes.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "jest --runInBand",
     "test:unit": "jest tests/unit --runInBand",

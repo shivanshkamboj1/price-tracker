@@ -14,6 +14,7 @@ behind a marketplace-adapter interface.
 
 - [Architecture](#architecture)
 - [Quick start](#quick-start)
+- [Deploying](#deploying)
 - [How prices are collected](#how-prices-are-collected)
 - [Marketplace sessions](#optional-marketplace-sessions)
 - [Alerting rules](#alerting-rules)
@@ -115,6 +116,27 @@ development exactly as they do in production.
 2. **Add product**, paste an Amazon India or Flipkart product URL, set a target
    price and a check frequency.
 3. The first check is queued immediately; the card fills in within a minute.
+
+---
+
+## Deploying
+
+One Linux server: PM2 runs the API, worker and scheduler (`ecosystem.config.js`),
+nginx serves the built client and proxies `/api` (`deploy/nginx.conf`), and
+certbot provides HTTPS — required, because production session cookies are
+`Secure`. MongoDB and Redis run locally and listen on 127.0.0.1 only.
+
+On the server, `.env` needs `NODE_ENV=production`, `FRONTEND_URL=https://<domain>`,
+`APP_ACCESS_PASSWORD`, and fresh `JWT_SECRET` / `ENCRYPTION_KEY` values
+(`openssl rand -hex 32`); the processes refuse to start with placeholders.
+
+Every deploy, first or later, is one command. It pulls, builds both apps,
+publishes the client to `/var/www/pricewatch`, builds database indexes
+(production never builds them implicitly) and reloads PM2:
+
+```bash
+bash deploy/update.sh
+```
 
 ---
 
