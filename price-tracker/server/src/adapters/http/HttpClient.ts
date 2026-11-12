@@ -31,7 +31,20 @@ export interface HttpClientOptions {
 export interface HttpResponse {
   status: number;
   body: string;
+  /** The URL that was requested. */
   url: string;
+  /** Where the response actually came from, after redirects. */
+  finalUrl: string;
+  redirects: number;
+}
+
+/**
+ * The redirect interceptor records every URL it visited, the final one last.
+ * It travels on the response `context`, which undici types as a bare object.
+ */
+function redirectHistory(context: unknown): URL[] {
+  const history = (context as { history?: unknown } | undefined)?.history;
+  return Array.isArray(history) ? (history as URL[]) : [];
 }
 
 /** Markers that mean "a human verification page", not a product page. */
@@ -96,13 +109,15 @@ export class HttpClient {
 
   async get(
     url: string,
-    init: { headers?: Record<string, string>; cookie?: string } = {},
+    init: { headers?: Record<string, string>; cookie?: string; jobId?: string } = {},
   ): Promise<HttpResponse> {
     const maxAttempts = this.options.maxAttempts ?? env.HTTP_MAX_ATTEMPTS;
     const timeout = this.options.timeoutMs ?? env.HTTP_TIMEOUT_MS;
+    const log = logger.child({ jobId: init.jobId, marketplace: this.options.marketplace });
 
     if (this.options.enforceRobots !== false) {
       const decision = await checkRobots(url, USER_AGENT);
+      log.debug({ url, allowed: decision.allowed, crawlDelayMs: decision.crawlDelayMs }, 'robots.txt checked');
       if (!decision.allowed) {
         throw new AdapterError(
           'blocked',
@@ -118,8 +133,23 @@ export class HttpClient {
     let lastError: AdapterError | undefined;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const queuedAt = Date.now();
       await this.breaker.assertClosed();
       await this.limiter.acquire();
+      const sentAt = Date.now();
+
+      log.info(
+        {
+          url,
+          attempt,
+          maxAttempts,
+          // Time spent waiting for the shared politeness budget before sending.
+          rateLimitWaitMs: sentAt - queuedAt,
+          // Whether the user's own marketplace session went along. Never the cookie itself.
+          withSession: Boolean(init.cookie),
+        },
+        'upstream request sent',
+      );
 
       let response: Dispatcher.ResponseData;
       try {
@@ -142,6 +172,7 @@ export class HttpClient {
           retryable: true,
           cause: err,
         });
+        log.warn({ url, attempt, durationMs: Date.now() - sentAt, err }, 'upstream request failed');
         await this.breaker.recordFailure();
         if (attempt < maxAttempts) {
           await sleep(this.retryDelay(attempt));
@@ -151,24 +182,36 @@ export class HttpClient {
       }
 
       const body = await readTextBody(response);
+      const history = redirectHistory(response.context);
+      const finalUrl = history.at(-1)?.toString() ?? url;
+      const redirects = Math.max(0, history.length - 1);
+
+      log.info(
+        {
+          attempt,
+          status: response.statusCode,
+          finalUrl,
+          redirects,
+          contentType: response.headers['content-type'],
+          bodyLength: body.length,
+          durationMs: Date.now() - sentAt,
+        },
+        'upstream response received',
+      );
+
       const failure = classify(response.statusCode, body, this.options.marketplace);
 
       if (!failure) {
         await this.breaker.recordSuccess();
-        return { status: response.statusCode, body, url };
+        return { status: response.statusCode, body, url, finalUrl, redirects };
       }
 
       // A blocked or failing marketplace counts against the circuit; a missing
       // product does not — that is our data being stale, not their service failing.
       if (failure.kind !== 'not_found') await this.breaker.recordFailure();
 
-      logger.warn(
-        {
-          marketplace: this.options.marketplace,
-          status: response.statusCode,
-          kind: failure.kind,
-          attempt,
-        },
+      log.warn(
+        { status: response.statusCode, kind: failure.kind, reason: failure.message, attempt },
         'upstream request rejected',
       );
 

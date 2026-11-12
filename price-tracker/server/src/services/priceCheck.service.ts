@@ -3,7 +3,7 @@ import {
   type Availability,
   type CheckErrorKind,
 } from '../config/constants';
-import { logger } from '../config/logger';
+import { logger, type Logger } from '../config/logger';
 import { getAdapter } from '../adapters/factory';
 import type { ProductSnapshot } from '../adapters/types';
 import { Product, type ProductDocument } from '../models/Product';
@@ -124,7 +124,16 @@ async function executeCheck(productId: string, options: CheckOptions): Promise<C
       errorMessage: message.slice(0, 512),
     });
 
-    log.warn({ ...describeError(failure), durationMs }, 'price check failed');
+    log.warn(
+      {
+        ...describeError(failure),
+        durationMs,
+        status: product.status,
+        consecutiveFailures: product.consecutiveFailures,
+        nextCheckAt: product.nextCheckAt,
+      },
+      'price check failed',
+    );
     return {
       result: 'failed',
       kind,
@@ -133,7 +142,7 @@ async function executeCheck(productId: string, options: CheckOptions): Promise<C
     };
   }
 
-  const { priceChanged, alerted } = await applySuccess(product, snapshot, options);
+  const { priceChanged, alerted } = await applySuccess(product, snapshot, options, log);
 
   await JobLog.create({
     jobId: options.jobId,
@@ -150,7 +159,14 @@ async function executeCheck(productId: string, options: CheckOptions): Promise<C
   });
 
   log.info(
-    { durationMs, price: snapshot.price, availability: snapshot.availability, priceChanged, alerted },
+    {
+      durationMs,
+      price: snapshot.price,
+      availability: snapshot.availability,
+      priceChanged,
+      alerted,
+      nextCheckAt: product.nextCheckAt,
+    },
     'price check completed',
   );
 
@@ -161,6 +177,7 @@ async function applySuccess(
   product: ProductDocument,
   snapshot: ProductSnapshot,
   options: CheckOptions,
+  log: Logger,
 ): Promise<{ priceChanged: boolean; alerted: boolean }> {
   const now = snapshot.fetchedAt;
   const previousPrice = product.currentPrice;
@@ -193,7 +210,7 @@ async function applySuccess(
     product.highestPrice =
       product.highestPrice === undefined ? price : Math.max(product.highestPrice, price);
 
-    await recordPricePoint({
+    const point = await recordPricePoint({
       productId: product._id,
       userId: product.userId,
       price,
@@ -203,9 +220,21 @@ async function applySuccess(
       checkedAt: now,
       metadata: { ...snapshot.metadata, jobId: options.jobId },
     });
+    log.info(
+      {
+        price,
+        previousPrice,
+        priceChanged,
+        // `deduplicated` means an identical reading inside HISTORY_DEDUPE_WINDOW_MIN.
+        historyPoint: point.created ? 'created' : 'deduplicated',
+      },
+      'price recorded',
+    );
+  } else {
+    log.info({ availability: snapshot.availability }, 'no price on page; price history not updated');
   }
 
-  const alerted = await maybeRaiseAlert(product, price, snapshot, previous);
+  const alerted = await maybeRaiseAlert(product, price, snapshot, previous, log);
   await product.save();
   return { priceChanged, alerted };
 }
@@ -215,9 +244,13 @@ async function maybeRaiseAlert(
   price: number | null,
   snapshot: ProductSnapshot,
   previous: { availability: Availability; lowestPrice?: number },
+  log: Logger,
 ): Promise<boolean> {
   const user = await User.findById(product.userId).lean();
-  if (!user) return false;
+  if (!user) {
+    log.warn('product owner not found; alert evaluation skipped');
+    return false;
+  }
 
   const { channel, alertMode, rules } = resolveAlertSettings(product, user);
   const dropFromPrice = product.dropReferencePrice;
@@ -243,7 +276,18 @@ async function maybeRaiseAlert(
 
   if (decision.shouldDisarm) product.alertArmed = false;
   product.dropReferencePrice = decision.dropReferencePrice;
-  if (!decision.shouldAlert || price === null || channel === 'none') return false;
+  if (!decision.shouldAlert || price === null || channel === 'none') {
+    log.info(
+      {
+        reason: decision.reason ?? (channel === 'none' ? 'channel_none' : undefined),
+        channel,
+        price,
+        targetPrice: product.targetPrice,
+      },
+      'no alert raised',
+    );
+    return false;
+  }
 
   const alert = await createPendingAlert(product, price, channel, {
     reasons: decision.reasons,
@@ -257,6 +301,10 @@ async function maybeRaiseAlert(
       productId: product._id.toString(),
     },
     decision.delayMs,
+  );
+  log.info(
+    { alertId: alert._id.toString(), reasons: decision.reasons, channel, delayMs: decision.delayMs },
+    'alert queued for delivery',
   );
 
   const now = new Date();

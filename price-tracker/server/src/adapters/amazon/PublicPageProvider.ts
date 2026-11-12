@@ -1,4 +1,5 @@
 import { env } from '../../config/env';
+import { logger } from '../../config/logger';
 import { AdapterError } from '../../utils/errors';
 import { detectCurrency, parsePriceToMinor } from '../../utils/money';
 import { HttpClient } from '../http/HttpClient';
@@ -51,23 +52,55 @@ export class AmazonPublicPageProvider implements ProductDataProvider {
   }
 
   async fetchProduct(identity: ProductIdentity, ctx: FetchContext): Promise<ProductSnapshot> {
+    const log = logger.child({ jobId: ctx.jobId, provider: this.name });
     const res = await this.http.get(identity.canonicalUrl, {
       // Only present when the user explicitly connected their own browser
       // session; the backend never obtains this by asking for credentials.
       cookie: ctx.userSession,
+      jobId: ctx.jobId,
     });
 
     const structured = extractStructuredProduct(res.body);
     const meta = extractMetaProduct(res.body);
 
     const priceText = firstText(res.body, PRICE_SELECTORS);
-    const price = structured?.price ?? meta.price ?? parsePriceToMinor(priceText ?? null);
+    const selectorPrice = parsePriceToMinor(priceText ?? null);
+    const price = structured?.price ?? meta.price ?? selectorPrice;
 
-    const title =
-      firstText(res.body, TITLE_SELECTORS) ??
-      structured?.title ??
-      meta.title ??
-      identity.externalProductId;
+    const productTitle = firstText(res.body, TITLE_SELECTORS);
+    const title = productTitle ?? structured?.title ?? meta.title ?? identity.externalProductId;
+
+    log.info(
+      {
+        finalUrl: res.finalUrl,
+        redirects: res.redirects,
+        pageTitle: meta.title,
+        productTitleFound: productTitle !== undefined,
+        structuredData: structured !== null,
+        priceFrom:
+          structured?.price !== undefined
+            ? 'json-ld'
+            : meta.price !== undefined
+              ? 'meta'
+              : selectorPrice !== null
+                ? 'selector'
+                : null,
+        price,
+      },
+      'parsed product page',
+    );
+
+    // An Amazon product page always has `#productTitle`, even when the item is
+    // unavailable. Without it, a price or structured data, this is some other
+    // page, and the out-of-stock fallback below would misreport it.
+    if (!structured && price === null && !productTitle) {
+      const landedOn = res.redirects > 0 ? ` after redirecting to ${res.finalUrl}` : '';
+      throw new AdapterError(
+        'blocked',
+        `Amazon returned a page without product details${landedOn} (page title: "${meta.title ?? 'none'}")`,
+        { retryable: true, statusCode: res.status },
+      );
+    }
 
     const availabilityText = firstText(res.body, AVAILABILITY_SELECTORS);
     let availability = structured?.availability ?? 'unknown';

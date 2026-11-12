@@ -55,20 +55,52 @@ export abstract class BaseAdapter implements MarketplaceAdapter {
     ctx: FetchContext = {},
   ): Promise<ProductSnapshot> {
     const key = cacheKey(this.marketplace, identity.externalProductId);
+    const log = logger.child({
+      jobId: ctx.jobId,
+      marketplace: this.marketplace,
+      externalProductId: identity.externalProductId,
+    });
 
     if (!ctx.bypassCache) {
       const cached = await readCache<ProductSnapshot>(key);
       if (cached) {
-        logger.debug(
-          { marketplace: this.marketplace, externalProductId: identity.externalProductId },
+        const fetchedAt = new Date(cached.fetchedAt);
+        log.info(
+          {
+            ageMs: Date.now() - fetchedAt.getTime(),
+            price: cached.price,
+            availability: cached.availability,
+          },
           'served product snapshot from cache',
         );
-        return { ...cached, fetchedAt: new Date(cached.fetchedAt) };
+        return { ...cached, fetchedAt };
       }
     }
 
     const provider = this.selectProvider();
+    log.info(
+      {
+        provider: provider.name,
+        dataSource: this.dataSource,
+        cache: ctx.bypassCache ? 'bypassed' : 'miss',
+        url: identity.canonicalUrl,
+      },
+      'fetching product from provider',
+    );
+
+    const startedAt = Date.now();
     const snapshot = await provider.fetchProduct(identity, ctx);
+    log.info(
+      {
+        provider: provider.name,
+        durationMs: Date.now() - startedAt,
+        title: snapshot.title,
+        price: snapshot.price,
+        availability: snapshot.availability,
+      },
+      'provider returned product',
+    );
+
     await writeCache(key, snapshot);
     return snapshot;
   }

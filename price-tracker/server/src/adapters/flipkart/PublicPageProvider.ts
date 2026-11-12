@@ -1,4 +1,5 @@
 import { env } from '../../config/env';
+import { logger } from '../../config/logger';
 import { AdapterError } from '../../utils/errors';
 import { detectCurrency, parsePriceToMinor } from '../../utils/money';
 import { HttpClient } from '../http/HttpClient';
@@ -32,13 +33,18 @@ export class FlipkartPublicPageProvider implements ProductDataProvider {
   }
 
   async fetchProduct(identity: ProductIdentity, ctx: FetchContext): Promise<ProductSnapshot> {
-    const res = await this.http.get(identity.canonicalUrl, { cookie: ctx.userSession });
+    const log = logger.child({ jobId: ctx.jobId, provider: this.name });
+    const res = await this.http.get(identity.canonicalUrl, {
+      cookie: ctx.userSession,
+      jobId: ctx.jobId,
+    });
 
     const structured = extractStructuredProduct(res.body);
     const meta = extractMetaProduct(res.body);
 
     const priceText = firstText(res.body, PRICE_SELECTORS);
-    const price = structured?.price ?? meta.price ?? parsePriceToMinor(priceText ?? null);
+    const selectorPrice = parsePriceToMinor(priceText ?? null);
+    const price = structured?.price ?? meta.price ?? selectorPrice;
 
     const title =
       structured?.title ??
@@ -54,6 +60,42 @@ export class FlipkartPublicPageProvider implements ProductDataProvider {
         : price !== null
           ? 'in_stock'
           : 'unknown';
+    }
+
+    log.info(
+      {
+        finalUrl: res.finalUrl,
+        redirects: res.redirects,
+        pageTitle: meta.title,
+        canonicalUrl: firstAttr(res.body, [
+          ['link[rel="canonical"]', 'href'],
+          ['meta[property="og:url"]', 'content'],
+        ]),
+        structuredData: structured !== null,
+        priceFrom:
+          structured?.price !== undefined
+            ? 'json-ld'
+            : meta.price !== undefined
+              ? 'meta'
+              : selectorPrice !== null
+                ? 'selector'
+                : null,
+        price,
+        availability,
+      },
+      'parsed product page',
+    );
+
+    // Every Flipkart product page carries schema.org Product data. A 200 with
+    // neither that nor a price is some other page — the homepage, an error
+    // shell — and must not be recorded as a successful check of this product.
+    if (!structured && price === null) {
+      const landedOn = res.redirects > 0 ? ` after redirecting to ${res.finalUrl}` : '';
+      throw new AdapterError(
+        'blocked',
+        `Flipkart returned a page without product details${landedOn} (page title: "${meta.title ?? 'none'}")`,
+        { retryable: true, statusCode: res.status },
+      );
     }
 
     if (price === null && availability === 'in_stock') {
