@@ -3,6 +3,7 @@ import { logger } from '../config/logger';
 import { createQueueConnection } from '../config/redis';
 import { QUEUE_NAMES, type NotificationJobData } from '../queues';
 import { deliverAlert } from '../services/alertDelivery.service';
+import { logJobLifecycle } from './jobLogging';
 
 /**
  * Delivery worker.
@@ -22,9 +23,7 @@ export function createNotificationWorker(): Worker<NotificationJobData> {
     },
   );
 
-  worker.on('failed', (job, err) => {
-    logger.error({ jobId: job?.id, alertId: job?.data?.alertId, err }, 'notification job failed');
-  });
+  logJobLifecycle(worker, ({ alertId, userId, productId }) => ({ alertId, userId, productId }));
 
   worker.on('error', (err) => logger.error({ err }, 'notification worker error'));
 

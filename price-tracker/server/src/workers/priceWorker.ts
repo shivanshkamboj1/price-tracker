@@ -4,6 +4,7 @@ import { logger } from '../config/logger';
 import { createQueueConnection } from '../config/redis';
 import { QUEUE_NAMES, type PriceCheckJobData } from '../queues';
 import { runPriceCheck } from '../services/priceCheck.service';
+import { logJobLifecycle } from './jobLogging';
 
 /**
  * Price worker.
@@ -37,18 +38,15 @@ export function createPriceWorker(): Worker<PriceCheckJobData> {
     },
   );
 
-  worker.on('completed', (job, result) => {
-    logger.debug({ jobId: job.id, result }, 'price check job completed');
-  });
-
-  worker.on('failed', (job, err) => {
-    // A failed *check* is handled inside the service and resolves the job
-    // successfully; reaching here means the job machinery itself failed.
-    logger.error(
-      { jobId: job?.id, productId: job?.data?.productId, err },
-      'price check job errored',
-    );
-  });
+  // A failed *check* is handled inside the service and completes the job with
+  // `outcome.result: 'failed'`; a failed *job* means the machinery itself broke.
+  logJobLifecycle(worker, ({ productId, userId, marketplace, trigger, bypassCache }) => ({
+    productId,
+    userId,
+    marketplace,
+    trigger,
+    bypassCache,
+  }));
 
   worker.on('error', (err) => logger.error({ err }, 'price worker error'));
 
