@@ -13,7 +13,14 @@ import {
   type Marketplace,
   type NotificationChannel,
   type ProductStatus,
+  type SmartAlertType,
 } from '../config/constants';
+
+export interface ProductAlertRules {
+  dropPercent?: number;
+  allTimeLow?: boolean;
+  backInStock?: boolean;
+}
 
 export interface IProduct {
   _id: Types.ObjectId;
@@ -51,6 +58,16 @@ export interface IProduct {
   alertArmed: boolean;
   lastAlertAt?: Date;
   alertCount: number;
+
+  /** Per-product overrides of the account's smart alert rules; unset = account default. */
+  alertRules?: ProductAlertRules;
+  /**
+   * Baseline for the percentage-drop rule: the highest price since the last drop
+   * alert (or since the rule was switched on). Minor units.
+   */
+  dropReferencePrice?: number;
+  /** When each smart trigger last fired, for per-trigger throttling. */
+  lastSmartAlertAt?: Partial<Record<SmartAlertType, Date>>;
 
   consecutiveFailures: number;
   lastErrorKind?: CheckErrorKind;
@@ -98,6 +115,28 @@ const productSchema = new Schema<IProduct>(
     alertArmed: { type: Boolean, default: false },
     lastAlertAt: { type: Date },
     alertCount: { type: Number, default: 0 },
+
+    alertRules: {
+      type: new Schema<ProductAlertRules>(
+        {
+          dropPercent: { type: Number, min: 0, max: 90 },
+          allTimeLow: { type: Boolean },
+          backInStock: { type: Boolean },
+        },
+        { _id: false },
+      ),
+    },
+    dropReferencePrice: { type: Number, min: 0 },
+    lastSmartAlertAt: {
+      type: new Schema(
+        {
+          all_time_low: { type: Date },
+          price_drop: { type: Date },
+          back_in_stock: { type: Date },
+        },
+        { _id: false },
+      ),
+    },
 
     consecutiveFailures: { type: Number, default: 0 },
     lastErrorKind: { type: String, enum: CHECK_ERROR_KINDS },

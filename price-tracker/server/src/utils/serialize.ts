@@ -41,6 +41,12 @@ export interface ProductDto {
   alertMode: string | null;
   alertArmed: boolean;
   alertCount: number;
+  /** Per-product overrides; null means the account default applies. */
+  alertRules: {
+    dropPercent: number | null;
+    allTimeLow: boolean | null;
+    backInStock: boolean | null;
+  };
   consecutiveFailures: number;
   errorKind: string | null;
   errorMessage: string | null;
@@ -85,6 +91,11 @@ export function productToDto(product: IProduct): ProductDto {
     alertMode: product.alertMode ?? null,
     alertArmed: product.alertArmed,
     alertCount: product.alertCount,
+    alertRules: {
+      dropPercent: product.alertRules?.dropPercent ?? null,
+      allTimeLow: product.alertRules?.allTimeLow ?? null,
+      backInStock: product.alertRules?.backInStock ?? null,
+    },
     consecutiveFailures: product.consecutiveFailures,
     errorKind: product.lastErrorKind ?? null,
     errorMessage: product.lastErrorMessage ?? null,
@@ -151,8 +162,12 @@ export function alertToDto(alert: IAlert & { productId: unknown }) {
         }
       : null,
     type: alert.type,
+    // Alerts raised before smart alerts existed have only `type`.
+    reasons: alert.reasons?.length ? alert.reasons : [alert.type],
     price: toMajor(alert.price),
     targetPrice: toMajor(alert.targetPrice),
+    dropFromPrice: money(alert.dropFromPrice),
+    previousLowestPrice: money(alert.previousLowestPrice),
     currency: alert.currency,
     channel: alert.channel,
     status: alert.status,

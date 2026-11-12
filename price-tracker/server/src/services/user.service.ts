@@ -1,4 +1,5 @@
-import { User, type UserDocument } from '../models/User';
+import type { NotificationChannel } from '../config/constants';
+import { User, type AlertRules, type UserDocument } from '../models/User';
 import { notFound } from '../utils/errors';
 
 export interface ProfileUpdate {
@@ -8,10 +9,11 @@ export interface ProfileUpdate {
 }
 
 export interface NotificationSettingsUpdate {
-  channel?: 'sms' | 'whatsapp' | 'none';
+  channel?: NotificationChannel;
   alertMode?: 'once' | 'always';
   minIntervalMinutes?: number;
   quietHours?: { enabled: boolean; startHour: number; endHour: number };
+  alertRules?: Partial<AlertRules>;
 }
 
 async function load(userId: string): Promise<UserDocument> {
@@ -51,6 +53,11 @@ export async function updateNotificationSettings(
   if (patch.alertMode !== undefined) prefs.alertMode = patch.alertMode;
   if (patch.minIntervalMinutes !== undefined) prefs.minIntervalMinutes = patch.minIntervalMinutes;
   if (patch.quietHours !== undefined) prefs.quietHours = patch.quietHours;
+  if (patch.alertRules !== undefined) {
+    for (const [key, value] of Object.entries(patch.alertRules)) {
+      if (value !== undefined) user.set(`notificationPrefs.alertRules.${key}`, value);
+    }
+  }
 
   user.notificationPrefs = prefs;
   user.markModified('notificationPrefs');

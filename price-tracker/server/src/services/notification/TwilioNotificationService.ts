@@ -6,7 +6,7 @@ import type {
   DeliveryResult,
   MessageRequest,
   NotificationService,
-  PriceAlertPayload,
+  PhoneAlertPayload,
 } from './types';
 
 /** TwiML is XML, and product titles contain `&` often enough to matter. */
@@ -110,7 +110,7 @@ export class TwilioNotificationService implements NotificationService {
     }
   }
 
-  async sendPriceAlert(payload: PriceAlertPayload): Promise<DeliveryResult> {
+  async sendPriceAlert(payload: PhoneAlertPayload): Promise<DeliveryResult> {
     switch (payload.channel) {
       case 'whatsapp':
         return this.sendWhatsApp({ to: payload.to, body: priceAlertWhatsApp(payload) });

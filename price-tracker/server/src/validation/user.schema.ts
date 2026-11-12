@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ALERT_MODES, MARKETPLACES, NOTIFICATION_CHANNELS } from '../config/constants';
-import { pagination, phoneNumber, timezone } from './common';
+import { dropPercent, pagination, phoneNumber, timezone } from './common';
 
 export const updateProfileSchema = z
   .object({
@@ -21,6 +21,14 @@ export const notificationSettingsSchema = z
         startHour: z.number().int().min(0).max(23),
         endHour: z.number().int().min(0).max(23),
       })
+      .optional(),
+    alertRules: z
+      .object({
+        dropPercent: dropPercent.optional(),
+        allTimeLow: z.boolean().optional(),
+        backInStock: z.boolean().optional(),
+      })
+      .strict()
       .optional(),
   })
   .refine((data) => Object.keys(data).length > 0, { message: 'Nothing to update' });
@@ -55,3 +63,11 @@ export const connectSessionSchema = z.object({
 });
 
 export const marketplaceParamSchema = z.object({ marketplace: z.enum(MARKETPLACES) });
+
+/** Telegram chat ids: integers, negative for groups and channels. */
+const telegramChatId = z.string().regex(/^-?\d{1,20}$/, 'Invalid Telegram chat id');
+
+export const telegramChatParamSchema = z.object({ chatId: telegramChatId });
+
+/** Omit `chatId` to test every linked chat. */
+export const telegramTestSchema = z.object({ chatId: telegramChatId.optional() }).strict();

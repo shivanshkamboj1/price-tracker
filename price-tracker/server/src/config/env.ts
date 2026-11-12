@@ -48,6 +48,12 @@ const envSchema = z
     TWILIO_PHONE_NUMBER: z.string().optional(),
     TWILIO_WHATSAPP_NUMBER: z.string().optional(),
 
+    /** Token from @BotFather. Enables the Telegram channel; nothing else is needed. */
+    TELEGRAM_BOT_TOKEN: z
+      .string()
+      .regex(/^\d+:[A-Za-z0-9_-]{30,}$/, 'should look like 123456789:AAH…, as issued by @BotFather')
+      .optional(),
+
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
     LOG_PRETTY: booleanish.default('false'),
 
@@ -95,8 +101,12 @@ const envSchema = z
 
     /** Product payload cache TTL — avoids asking a marketplace the same question twice. */
     PRODUCT_CACHE_TTL_SEC: z.coerce.number().int().min(0).default(300),
-    /** Skip writing a PriceHistory row if an identical one exists within this window. */
-    HISTORY_DEDUPE_WINDOW_MIN: z.coerce.number().int().min(0).default(360),
+    /**
+     * 0 (default) records every successful check, so the chart is continuous even
+     * when the price never moves. Above 0, an unchanged reading is written at most
+     * once per this many minutes.
+     */
+    HISTORY_DEDUPE_WINDOW_MIN: z.coerce.number().int().min(0).default(0),
 
     SCHEDULER_TICK_MS: z.coerce.number().int().min(5000).default(30000),
     SCHEDULER_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(200),
@@ -160,6 +170,8 @@ export const corsOrigins = [
     .map((s) => s.trim())
     .filter(Boolean),
 ];
+
+export const telegramConfigured = Boolean(env.TELEGRAM_BOT_TOKEN);
 
 export const twilioConfigured = Boolean(
   env.TWILIO_ACCOUNT_SID &&

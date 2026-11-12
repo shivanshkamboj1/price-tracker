@@ -14,6 +14,23 @@ import { resolveProductUrl } from '../adapters/factory';
 import { badRequest, conflict, notFound } from '../utils/errors';
 import { toMinor } from '../utils/money';
 
+/** `null` clears an override so the account default applies; omitted leaves it as is. */
+export interface AlertRulesInput {
+  dropPercent?: number | null;
+  allTimeLow?: boolean | null;
+  backInStock?: boolean | null;
+}
+
+const ALERT_RULE_KEYS = ['dropPercent', 'allTimeLow', 'backInStock'] as const;
+
+function applyAlertRules(product: ProductDocument, input: AlertRulesInput): void {
+  for (const key of ALERT_RULE_KEYS) {
+    const value = input[key];
+    if (value === undefined) continue;
+    product.set(`alertRules.${key}`, value ?? undefined);
+  }
+}
+
 export interface CreateProductInput {
   productUrl: string;
   targetPrice: number; // major units from the client
@@ -21,6 +38,7 @@ export interface CreateProductInput {
   nickname?: string;
   notificationChannel?: NotificationChannel;
   alertMode?: AlertMode;
+  alertRules?: AlertRulesInput;
   comparisonGroup?: string;
   /** Optional client hint. Only used to warn about a mismatch — never trusted. */
   marketplace?: Marketplace;
@@ -32,6 +50,7 @@ export interface UpdateProductInput {
   nickname?: string | null;
   notificationChannel?: NotificationChannel;
   alertMode?: AlertMode;
+  alertRules?: AlertRulesInput;
   comparisonGroup?: string | null;
   status?: Extract<ProductStatus, 'active' | 'paused'>;
 }
@@ -109,7 +128,7 @@ export async function createProduct(
   });
   if (duplicate) throw conflict('You are already tracking this product');
 
-  return Product.create({
+  const product = new Product({
     userId: new Types.ObjectId(userId),
     marketplace: identity.marketplace,
     productUrl: identity.canonicalUrl,
@@ -125,6 +144,8 @@ export async function createProduct(
     alertMode: input.alertMode,
     comparisonGroup: input.comparisonGroup,
   });
+  if (input.alertRules) applyAlertRules(product, input.alertRules);
+  return product.save();
 }
 
 /** Every read goes through here so ownership is always part of the query. */
@@ -202,6 +223,7 @@ export async function updateProduct(
   if (input.nickname !== undefined) product.nickname = input.nickname ?? undefined;
   if (input.notificationChannel !== undefined) product.notificationChannel = input.notificationChannel;
   if (input.alertMode !== undefined) product.alertMode = input.alertMode;
+  if (input.alertRules !== undefined) applyAlertRules(product, input.alertRules);
   if (input.comparisonGroup !== undefined) {
     product.comparisonGroup = input.comparisonGroup ?? undefined;
   }

@@ -20,6 +20,9 @@ process.env.AMAZON_DATA_SOURCE ??= 'public';
 process.env.FLIPKART_DATA_SOURCE ??= 'public';
 process.env.MARKETPLACE_MIN_GAP_MS ??= '0';
 process.env.MARKETPLACE_JITTER_MS ??= '0';
+// A well-formed but fake token, so the Telegram code paths are configured.
+// Tests that reach Telegram mock `fetch`; nothing is sent anywhere.
+process.env.TELEGRAM_BOT_TOKEN ??= '123456789:TEST-test_token_not_real_000000000000';
 
 jest.mock('../src/config/redis', () => {
   const { fakeRedis } = require('./helpers/fakeRedis');

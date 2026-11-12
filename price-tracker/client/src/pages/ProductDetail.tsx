@@ -10,8 +10,21 @@ import { SelectInput, TextInput } from '../components/Field';
 import { productApi } from '../services/endpoints';
 import { useToast } from '../hooks/useToast';
 import { ApiError } from '../services/api';
-import { CHECK_INTERVALS, formatDateTime, formatMoney, intervalLabel, relativeTime } from '../utils/format';
-import type { HistoryRange } from '../types';
+import { AlertRuleFields } from '../components/AlertRuleFields';
+import { useAuth } from '../hooks/useAuth';
+import {
+  CHANNEL_LABELS,
+  CHANNEL_OPTIONS,
+  CHECK_INTERVALS,
+  DEFAULT_ALERT_RULES,
+  describeAlertRules,
+  effectiveAlertRules,
+  formatDateTime,
+  formatMoney,
+  intervalLabel,
+  relativeTime,
+} from '../utils/format';
+import type { AlertRuleOverrides, HistoryRange, NotificationChannel } from '../types';
 
 function Metric({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' }) {
   return (
@@ -39,6 +52,14 @@ export function ProductDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [targetDraft, setTargetDraft] = useState('');
   const [intervalDraft, setIntervalDraft] = useState(360);
+  const [channelDraft, setChannelDraft] = useState<'' | NotificationChannel>('');
+  const [rulesDraft, setRulesDraft] = useState<AlertRuleOverrides>({
+    dropPercent: null,
+    allTimeLow: null,
+    backInStock: null,
+  });
+  const { user } = useAuth();
+  const ruleDefaults = { ...DEFAULT_ALERT_RULES, ...user?.notificationPrefs.alertRules };
 
   const productQuery = useQuery({
     queryKey: ['product', id],
@@ -108,8 +129,13 @@ export function ProductDetailPage() {
   const openEdit = () => {
     setTargetDraft(String(product.targetPrice));
     setIntervalDraft(product.checkInterval);
+    setChannelDraft(product.notificationChannel ?? '');
+    setRulesDraft(product.alertRules);
     setEditing(true);
   };
+
+  const smartRules = describeAlertRules(effectiveAlertRules(ruleDefaults, product.alertRules));
+  const channel = product.notificationChannel ?? user?.notificationPrefs.channel;
 
   return (
     <div className="space-y-6">
@@ -232,6 +258,11 @@ export function ProductDetailPage() {
           {product.lastCheckedAt ? formatDateTime(product.lastCheckedAt) : 'never'} ·{' '}
           {product.alertCount} alert{product.alertCount === 1 ? '' : 's'} sent
         </p>
+        <p className="mt-1 text-xs text-muted">
+          Alerts{channel ? ` via ${CHANNEL_LABELS[channel] ?? channel}` : ''}: at or below{' '}
+          {formatMoney(product.targetPrice, product.currency)}
+          {smartRules ? ` · ${smartRules}` : ''}
+        </p>
       </header>
 
       <PriceChart
@@ -258,6 +289,9 @@ export function ProductDetailPage() {
                 updateMutation.mutate({
                   targetPrice: Number.parseFloat(targetDraft),
                   checkInterval: Number(intervalDraft),
+                  // An empty choice cannot clear the stored channel, so it is only sent when set.
+                  ...(channelDraft ? { notificationChannel: channelDraft } : {}),
+                  alertRules: rulesDraft,
                 })
               }
             >
@@ -283,6 +317,20 @@ export function ProductDetailPage() {
             onChange={(event) => setIntervalDraft(Number(event.target.value))}
             options={CHECK_INTERVALS.map((value) => ({ value, label: intervalLabel(value) }))}
           />
+          <SelectInput
+            label="Notify me via"
+            value={channelDraft}
+            onChange={(event) => setChannelDraft(event.target.value as '' | NotificationChannel)}
+            options={[
+              ...(product.notificationChannel ? [] : [{ value: '', label: 'Account default' }]),
+              ...CHANNEL_OPTIONS,
+            ]}
+          />
+          <fieldset className="space-y-3 border-t border-line pt-4">
+            <legend className="sr-only">Smart alerts</legend>
+            <p className="text-sm font-medium text-ink">Also alert me when</p>
+            <AlertRuleFields value={rulesDraft} defaults={ruleDefaults} onChange={setRulesDraft} />
+          </fieldset>
         </div>
       </Modal>
 

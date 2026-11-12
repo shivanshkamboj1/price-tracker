@@ -4,7 +4,7 @@ import type {
   DeliveryResult,
   MessageRequest,
   NotificationService,
-  PriceAlertPayload,
+  PhoneAlertPayload,
 } from './types';
 
 /**
@@ -40,7 +40,7 @@ export class LogNotificationService implements NotificationService {
     return this.emit('call', message);
   }
 
-  async sendPriceAlert(payload: PriceAlertPayload): Promise<DeliveryResult> {
+  async sendPriceAlert(payload: PhoneAlertPayload): Promise<DeliveryResult> {
     const render = {
       whatsapp: priceAlertWhatsApp,
       call: priceAlertVoice,

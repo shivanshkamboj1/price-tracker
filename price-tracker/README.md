@@ -1,7 +1,8 @@
 # Pricewatch — Amazon India & Flipkart price tracker
 
 Track product prices across Amazon India and Flipkart, keep a full price history,
-and get a WhatsApp or SMS alert the moment a product reaches the price you set.
+and get a Telegram, WhatsApp or SMS alert the moment a product reaches the price you
+set, drops sharply, hits a new low or comes back in stock.
 
 Built on the MERN stack with a real job pipeline: the API never performs a price
 check, a scheduler decides what is due, and a pool of workers does the work
@@ -189,12 +190,37 @@ stock. Two modes, per account and overridable per product:
 - **Notify me whenever it drops below target again** — repeats, throttled by a
   configurable minimum gap.
 
+### Smart alerts
+
+Three more triggers, each set as an account default in Settings and overridable
+per product:
+
+| Trigger | Fires when | Default |
+|---|---|---|
+| **Price drops by X%** | the price is X% or more below its baseline — the highest price since the last drop alert, so a slow slide counts once it adds up | off |
+| **New lowest price ever** | the price beats the lowest price recorded before this check | off |
+| **Back in stock** | a listing that was out of stock is available again | on |
+
+Each one is edge-triggered and throttled by the same minimum gap as repeat target
+alerts. When several fire on one check they arrive as a single message, headlined
+by the most important one.
+
 **Quiet hours** hold an alert until the window ends rather than dropping it. Alerts
 are persisted first and delivered by a separate queue, so a messaging outage never
 loses one, and delivery retries on its own schedule.
 
-Twilio credentials live only in the backend environment. Without them the app runs
-normally and logs the message it would have sent.
+### Channels
+
+- **Telegram** — create a bot with [@BotFather](https://t.me/BotFather), set
+  `TELEGRAM_BOT_TOKEN`, restart, then *Settings → Telegram → Connect* and tap
+  **Start** in Telegram. No webhook or public URL is needed. Connect up to 10
+  accounts or groups; each gets every alert. To add someone else, use *Add another
+  Telegram account* and share the link. For a group, add the bot and send it the
+  `/start <code>` shown on the settings page.
+- **WhatsApp, SMS, phone call** — via Twilio, to the mobile number on your profile.
+
+Twilio and Telegram credentials live only in the backend environment. Without
+Twilio the app runs normally and logs the message it would have sent.
 
 ---
 

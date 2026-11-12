@@ -137,14 +137,17 @@ describe('successful check', () => {
     });
   });
 
-  it('does not write a duplicate history row for an unchanged price', async () => {
+  it('records every check, even when the price is unchanged', async () => {
     const product = await seed();
     getProductDetails.mockResolvedValue(snapshot({ price: 2_499_900 }));
 
     await runPriceCheck(product._id.toString(), { jobId: 'a', trigger: 'scheduled' });
     await runPriceCheck(product._id.toString(), { jobId: 'b', trigger: 'scheduled' });
+    await runPriceCheck(product._id.toString(), { jobId: 'c', trigger: 'scheduled' });
 
-    expect(await PriceHistory.countDocuments({ productId: product._id })).toBe(1);
+    const rows = await PriceHistory.find({ productId: product._id }).lean();
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row.price === 2_499_900)).toBe(true);
   });
 
   it('writes a history row as soon as the price moves', async () => {
@@ -228,6 +231,101 @@ describe('alerting', () => {
       jobId: 'nophone',
       trigger: 'scheduled',
     });
+
+    expect(outcome).toMatchObject({ alerted: false });
+    expect(await Alert.countDocuments({ productId: product._id })).toBe(0);
+  });
+});
+
+describe('smart alerts', () => {
+  const check = (product: ProductDocument, jobId: string) =>
+    runPriceCheck(product._id.toString(), { jobId, trigger: 'scheduled' });
+
+  it('alerts when an out-of-stock listing comes back (on by default)', async () => {
+    const product = await seed({ availability: 'out_of_stock', currentPrice: 2_499_900 });
+    getProductDetails.mockResolvedValue(snapshot({ price: 2_499_900, availability: 'in_stock' }));
+
+    const outcome = await check(product, 'restock');
+
+    expect(outcome).toMatchObject({ alerted: true });
+    const alert = await Alert.findOne({ productId: product._id });
+    expect(alert).toMatchObject({ type: 'back_in_stock', reasons: ['back_in_stock'] });
+    expect(alert!.message).toContain('Back in Stock');
+
+    const updated = await Product.findById(product._id);
+    expect(updated!.lastSmartAlertAt?.back_in_stock).toBeInstanceOf(Date);
+    // The target latch belongs to the target rule and stays untouched.
+    expect(updated!.alertArmed).toBe(false);
+    expect(updated!.lastAlertAt).toBeUndefined();
+  });
+
+  it('alerts on a percentage drop from the account rule, measured from the high', async () => {
+    const product = await seed({}, { notificationPrefs: { alertRules: { dropPercent: 10 } } });
+
+    for (const [i, price] of [3_000_000, 2_900_000, 2_650_000].entries()) {
+      getProductDetails.mockResolvedValue(snapshot({ price }));
+      await check(product, `drop-${i}`);
+    }
+
+    const alerts = await Alert.find({ productId: product._id });
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatchObject({
+      type: 'price_drop',
+      price: 2_650_000,
+      dropFromPrice: 3_000_000,
+    });
+    expect(alerts[0]!.message).toContain('The price fell 12% from ₹30,000.');
+    expect((await Product.findById(product._id))!.dropReferencePrice).toBe(2_650_000);
+  });
+
+  it('alerts on a new lowest price when the product turns it on', async () => {
+    const product = await seed({ alertRules: { allTimeLow: true } });
+
+    getProductDetails.mockResolvedValue(snapshot({ price: 3_000_000 }));
+    await check(product, 'low-1');
+    expect(await Alert.countDocuments({ productId: product._id })).toBe(0);
+
+    getProductDetails.mockResolvedValue(snapshot({ price: 2_950_000 }));
+    await check(product, 'low-2');
+
+    const alert = await Alert.findOne({ productId: product._id });
+    expect(alert).toMatchObject({ type: 'all_time_low', previousLowestPrice: 3_000_000 });
+  });
+
+  it('sends one combined alert when several triggers fire together', async () => {
+    const product = await seed(
+      { availability: 'out_of_stock', alertRules: { allTimeLow: true }, lowestPrice: 2_200_000 },
+    );
+    getProductDetails.mockResolvedValue(snapshot({ price: 1_900_000, availability: 'in_stock' }));
+
+    await check(product, 'combo');
+
+    const alerts = await Alert.find({ productId: product._id });
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.reasons).toEqual(['target_reached', 'all_time_low', 'back_in_stock']);
+  });
+
+  it('routes to Telegram when the account has a linked chat', async () => {
+    const product = await seed(
+      {},
+      {
+        phone: undefined,
+        notificationPrefs: { channel: 'telegram' },
+        telegramChats: [{ chatId: '5123456789', linkedAt: new Date() }],
+      },
+    );
+    getProductDetails.mockResolvedValue(snapshot({ price: 1_899_900 }));
+
+    await check(product, 'tg');
+
+    expect(await Alert.findOne({ productId: product._id })).toMatchObject({ channel: 'telegram' });
+  });
+
+  it('holds a Telegram alert back until a chat is linked', async () => {
+    const product = await seed({}, { notificationPrefs: { channel: 'telegram' } });
+    getProductDetails.mockResolvedValue(snapshot({ price: 1_899_900 }));
+
+    const outcome = await check(product, 'tg-unlinked');
 
     expect(outcome).toMatchObject({ alerted: false });
     expect(await Alert.countDocuments({ productId: product._id })).toBe(0);

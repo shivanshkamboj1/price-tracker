@@ -9,15 +9,19 @@ import { MarketplaceBadge } from '../components/Badge';
 import { productApi } from '../services/endpoints';
 import { ApiError, fieldErrors } from '../services/api';
 import { useToast } from '../hooks/useToast';
-import { CHECK_INTERVALS, intervalLabel } from '../utils/format';
-import type { UrlPreview } from '../types';
+import { AlertRuleFields } from '../components/AlertRuleFields';
+import { useAuth } from '../hooks/useAuth';
+import { CHANNEL_OPTIONS, CHECK_INTERVALS, DEFAULT_ALERT_RULES, intervalLabel } from '../utils/format';
+import type { AlertRuleOverrides, NotificationChannel, UrlPreview } from '../types';
+
+const NO_OVERRIDES: AlertRuleOverrides = { dropPercent: null, allTimeLow: null, backInStock: null };
 
 interface AddProductForm {
   productUrl: string;
   targetPrice: string;
   checkInterval: number;
   nickname: string;
-  notificationChannel: '' | 'sms' | 'whatsapp' | 'call' | 'none';
+  notificationChannel: '' | NotificationChannel;
   alertMode: '' | 'once' | 'always';
   comparisonGroup: string;
 }
@@ -29,6 +33,9 @@ export function AddProductPage() {
   const [preview, setPreview] = useState<UrlPreview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [alertRules, setAlertRules] = useState<AlertRuleOverrides>(NO_OVERRIDES);
+  const { user } = useAuth();
+  const ruleDefaults = { ...DEFAULT_ALERT_RULES, ...user?.notificationPrefs.alertRules };
 
   const {
     register,
@@ -110,6 +117,10 @@ export function AddProductPage() {
         nickname: values.nickname.trim() || undefined,
         notificationChannel: values.notificationChannel || undefined,
         alertMode: values.alertMode || undefined,
+        // Only explicit choices are sent; "Account default" stays unset.
+        alertRules: Object.fromEntries(
+          Object.entries(alertRules).filter(([, value]) => value !== null),
+        ),
         comparisonGroup: values.comparisonGroup.trim() || undefined,
       });
     } catch (error) {
@@ -199,13 +210,7 @@ export function AddProductPage() {
           <SelectInput
             label="Notify me via"
             hint="Leave as default to use your account preference."
-            options={[
-              { value: '', label: 'Account default' },
-              { value: 'whatsapp', label: 'WhatsApp' },
-              { value: 'sms', label: 'SMS' },
-              { value: 'call', label: 'Phone call' },
-              { value: 'none', label: 'No notifications' },
-            ]}
+            options={[{ value: '', label: 'Account default' }, ...CHANNEL_OPTIONS]}
             {...register('notificationChannel')}
           />
 
@@ -219,6 +224,11 @@ export function AddProductPage() {
             {...register('alertMode')}
           />
         </div>
+
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-medium text-ink">Also alert me when</legend>
+          <AlertRuleFields value={alertRules} defaults={ruleDefaults} onChange={setAlertRules} />
+        </fieldset>
 
         <TextInput
           label="Comparison group"

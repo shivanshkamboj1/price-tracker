@@ -1,4 +1,8 @@
-import { MAX_CONSECUTIVE_FAILURES, type CheckErrorKind } from '../config/constants';
+import {
+  MAX_CONSECUTIVE_FAILURES,
+  type Availability,
+  type CheckErrorKind,
+} from '../config/constants';
 import { logger } from '../config/logger';
 import { getAdapter } from '../adapters/factory';
 import type { ProductSnapshot } from '../adapters/types';
@@ -10,7 +14,12 @@ import { backoffMinutes, minutesFromNow, nextCheckDate } from '../utils/time';
 import { lockKeys, withLock } from '../utils/lock';
 import { enqueueNotification } from '../queues';
 import { recordPricePoint } from './history.service';
-import { createPendingAlert, evaluateAlert, resolveAlertSettings } from './alert.service';
+import {
+  createPendingAlert,
+  evaluateAlert,
+  hasDestinationFor,
+  resolveAlertSettings,
+} from './alert.service';
 import { getDecryptedSession } from './marketplaceSession.service';
 
 export interface CheckOptions {
@@ -156,6 +165,8 @@ async function applySuccess(
   const now = snapshot.fetchedAt;
   const previousPrice = product.currentPrice;
   const price = snapshot.price;
+  // Captured before they are overwritten: the smart alerts compare against them.
+  const previous = { availability: product.availability, lowestPrice: product.lowestPrice };
 
   if (snapshot.title) product.title = snapshot.title;
   if (snapshot.imageUrl) product.imageUrl = snapshot.imageUrl;
@@ -194,7 +205,7 @@ async function applySuccess(
     });
   }
 
-  const alerted = await maybeRaiseAlert(product, price, snapshot);
+  const alerted = await maybeRaiseAlert(product, price, snapshot, previous);
   await product.save();
   return { priceChanged, alerted };
 }
@@ -203,11 +214,13 @@ async function maybeRaiseAlert(
   product: ProductDocument,
   price: number | null,
   snapshot: ProductSnapshot,
+  previous: { availability: Availability; lowestPrice?: number },
 ): Promise<boolean> {
   const user = await User.findById(product.userId).lean();
   if (!user) return false;
 
-  const { channel, alertMode } = resolveAlertSettings(product, user);
+  const { channel, alertMode, rules } = resolveAlertSettings(product, user);
+  const dropFromPrice = product.dropReferencePrice;
 
   const decision = evaluateAlert({
     price,
@@ -217,16 +230,26 @@ async function maybeRaiseAlert(
     lastAlertAt: product.lastAlertAt,
     alertMode,
     channel,
-    hasPhone: Boolean(user.phone),
+    hasDestination: hasDestinationFor(channel, user),
     minIntervalMinutes: user.notificationPrefs.minIntervalMinutes,
     quietHours: user.notificationPrefs.quietHours,
     timezone: user.timezone,
+    rules,
+    previousAvailability: previous.availability,
+    previousLowestPrice: previous.lowestPrice,
+    dropReferencePrice: product.dropReferencePrice,
+    lastSmartAlertAt: product.lastSmartAlertAt,
   });
 
   if (decision.shouldDisarm) product.alertArmed = false;
-  if (!decision.shouldAlert || price === null) return false;
+  product.dropReferencePrice = decision.dropReferencePrice;
+  if (!decision.shouldAlert || price === null || channel === 'none') return false;
 
-  const alert = await createPendingAlert(product, price, channel as 'sms' | 'whatsapp');
+  const alert = await createPendingAlert(product, price, channel, {
+    reasons: decision.reasons,
+    dropFromPrice,
+    previousLowestPrice: previous.lowestPrice,
+  });
   await enqueueNotification(
     {
       alertId: alert._id.toString(),
@@ -236,8 +259,16 @@ async function maybeRaiseAlert(
     decision.delayMs,
   );
 
-  product.alertArmed = true;
-  product.lastAlertAt = new Date();
+  const now = new Date();
+  // The target latch and its cooldown belong to the target rule only; smart
+  // triggers keep their own timestamps so one cannot silence another.
+  if (decision.reasons.includes('target_reached')) {
+    product.alertArmed = true;
+    product.lastAlertAt = now;
+  }
+  for (const reason of decision.reasons) {
+    if (reason !== 'target_reached') product.set(`lastSmartAlertAt.${reason}`, now);
+  }
   product.alertCount += 1;
   return true;
 }

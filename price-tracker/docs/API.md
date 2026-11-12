@@ -146,12 +146,20 @@ All product routes require authentication and are scoped to the caller.
   "targetPrice": 19999,
   "checkInterval": 360,               // minutes: 15 30 60 180 360 720 1440
   "nickname": "AirPods for Dad",      // optional
-  "notificationChannel": "whatsapp",  // optional: sms | whatsapp | none
+  "notificationChannel": "telegram",  // optional: telegram | whatsapp | sms | call | none
   "alertMode": "once",                // optional: once | always
+  "alertRules": {                     // optional; each key overrides the account default
+    "dropPercent": 10,                //   0 = off, 1–90
+    "allTimeLow": true,
+    "backInStock": true
+  },
   "comparisonGroup": "airpods-pro",   // optional
   "marketplace": "amazon_in"          // optional, cross-checked only
 }
 ```
+
+`ProductDto.alertRules` returns the overrides, with `null` for "use the account
+default".
 
 The marketplace is **derived from the URL host**. A `marketplace` value that
 disagrees is rejected with `400`; it is never trusted as the source of truth. The
@@ -202,6 +210,7 @@ Any subset of:
   "nickname": "New name",        // null clears it
   "notificationChannel": "sms",
   "alertMode": "always",
+  "alertRules": { "dropPercent": null, "backInStock": false }, // null = account default
   "comparisonGroup": null,
   "status": "paused"             // active | paused only
 }
@@ -212,8 +221,8 @@ failure counter and schedules a prompt check. `200` → `{ "product": ProductDto
 
 ### `PATCH /api/products/:id/settings`
 
-Same as above, restricted to `checkInterval`, `notificationChannel`, `alertMode`
-and `comparisonGroup`.
+Same as above, restricted to `checkInterval`, `notificationChannel`, `alertMode`,
+`alertRules` and `comparisonGroup`.
 
 ### `DELETE /api/products/:id`
 
@@ -247,9 +256,14 @@ Query: `range` = `24h` | `7d` | `30d` | `3m` | `all` (default `30d`).
 }
 ```
 
-A point is written on every successful check whose price or availability differs
-from the previous one; an unchanged reading is written at most once per
-`HISTORY_DEDUPE_WINDOW_MIN` (default 6 hours).
+A point is written on every successful check, including when the price is
+unchanged, so the chart is continuous. Setting `HISTORY_DEDUPE_WINDOW_MIN` above
+0 thins unchanged readings to at most one per window.
+
+When a range holds more than 1,500 points, it is split into equal time buckets
+and each bucket returns its lowest, highest and latest reading. Dips and spikes
+are kept, and the last point is always the most recent check. `stats` is always
+computed over every stored point in the range.
 
 ### `GET /api/products/compare`
 
@@ -274,6 +288,11 @@ Query: `page`, `limit`, `state` (`triggered` | `acknowledged` | `reset`),
 `unreadOnly=true`.
 
 `200` → `{ "data": Alert[], "meta": { "total", "unread", "page", "limit" } }`
+
+Each alert has `type` (the headline trigger) and `reasons` (every trigger that
+fired on that check, in priority order: `target_reached`, `all_time_low`,
+`price_drop`, `back_in_stock`). `dropFromPrice` and `previousLowestPrice` are set
+for drop and lowest-ever alerts.
 
 ### `PATCH /api/notifications/:id`
 
@@ -307,14 +326,37 @@ Query: `page`, `limit`, `state` (`triggered` | `acknowledged` | `reset`),
 
 ```jsonc
 {
-  "channel": "whatsapp",          // sms | whatsapp | none
+  "channel": "telegram",          // telegram | whatsapp | sms | call | none
   "alertMode": "once",            // once | always
   "minIntervalMinutes": 360,
-  "quietHours": { "enabled": true, "startHour": 22, "endHour": 8 }
+  "quietHours": { "enabled": true, "startHour": 22, "endHour": 8 },
+  "alertRules": { "dropPercent": 10, "allTimeLow": true, "backInStock": true } // any subset
 }
 ```
 
 `200` → `{ "notificationPrefs": { … } }`
+
+### Telegram
+
+An account can link up to 10 chats (people, groups or both). Every linked chat
+receives every Telegram alert.
+
+| Method | Path | |
+|---|---|---|
+| `GET` | `/api/user/telegram` | `{ configured, connected, botUsername, chats: [{ chatId, chatTitle, linkedAt }], maxChats }` |
+| `POST` | `/api/user/telegram/link` | `{ botUsername, code, url, expiresAt }` — `url` is `https://t.me/<bot>?start=<code>`, valid 15 minutes, adds one chat |
+| `DELETE` | `/api/user/telegram/link` | abandons an open link so its code stops working |
+| `POST` | `/api/user/telegram/verify` | `{ connected, chat }` — poll until `connected` |
+| `POST` | `/api/user/telegram/test` | body `{ chatId? }`; tests one chat, or all of them. `{ sent, failed: [{ chatId, reason }] }` |
+| `DELETE` | `/api/user/telegram/chats/:chatId` | removes one chat; `{ chats }` |
+
+Linking needs no webhook: `verify` reads the bot's pending updates with
+`getUpdates` and adds the chat that sent `/start <code>`. To add another person,
+share the link with them. A chat that links twice is refreshed, not duplicated. A
+bot that already has a webhook set returns `400` with instructions to remove it.
+
+Delivery is tracked per chat on the alert (`deliveries`). An alert is `sent` once
+any chat has it, and a retry only messages the chats that failed.
 
 ### `GET /api/user/marketplace-sessions`
 

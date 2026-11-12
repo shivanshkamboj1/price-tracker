@@ -12,6 +12,8 @@ import {
   listAlertsSchema,
   marketplaceParamSchema,
   notificationSettingsSchema,
+  telegramChatParamSchema,
+  telegramTestSchema,
   updateAlertSchema,
   updateProfileSchema,
 } from '../validation/user.schema';
@@ -59,6 +61,24 @@ userRouter.post(
   csrfProtection,
   validate({ body: notificationSettingsSchema }),
   user.patchNotificationSettings,
+);
+userRouter.get('/telegram', user.telegramStatus);
+userRouter.post('/telegram/link', writeLimiter, csrfProtection, user.telegramLink);
+userRouter.delete('/telegram/link', csrfProtection, user.telegramCancelLink);
+// Polled every few seconds while the user taps Start, so only the global limiter applies.
+userRouter.post('/telegram/verify', csrfProtection, user.telegramVerify);
+userRouter.post(
+  '/telegram/test',
+  writeLimiter,
+  csrfProtection,
+  validate({ body: telegramTestSchema }),
+  user.telegramTest,
+);
+userRouter.delete(
+  '/telegram/chats/:chatId',
+  csrfProtection,
+  validate({ params: telegramChatParamSchema }),
+  user.telegramRemoveChat,
 );
 userRouter.get('/marketplace-sessions', user.sessions);
 userRouter.post(

@@ -1,3 +1,5 @@
+import type { AlertRuleOverrides, AlertRules, AlertType, NotificationChannel } from '../types';
+
 const SYMBOLS: Record<string, string> = { INR: '₹', USD: '$', EUR: '€' };
 
 /** Indian digit grouping, no decimals unless the value actually has paise. */
@@ -89,6 +91,53 @@ export const AVAILABILITY_LABELS: Record<string, string> = {
   out_of_stock: 'Out of stock',
   unknown: 'Unknown',
 };
+
+export const CHANNEL_OPTIONS: Array<{ value: NotificationChannel; label: string }> = [
+  { value: 'telegram', label: 'Telegram' },
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'sms', label: 'SMS' },
+  { value: 'call', label: 'Phone call' },
+  { value: 'none', label: 'No notifications' },
+];
+
+export const CHANNEL_LABELS: Record<string, string> = Object.fromEntries(
+  CHANNEL_OPTIONS.map((option) => [option.value, option.label]),
+);
+
+/** Mirrors the server's account defaults for users who have never saved any. */
+export const DEFAULT_ALERT_RULES: AlertRules = { dropPercent: 0, allTimeLow: false, backInStock: true };
+
+export const DROP_PERCENT_CHOICES = [5, 10, 15, 20, 25, 30, 40, 50] as const;
+
+export const ALERT_TYPE_LABELS: Record<AlertType, string> = {
+  target_reached: 'Target reached',
+  all_time_low: 'Lowest ever',
+  price_drop: 'Price drop',
+  back_in_stock: 'Back in stock',
+};
+
+/** Account defaults merged with a product's overrides — what the server will apply. */
+export function effectiveAlertRules(
+  defaults: AlertRules | undefined,
+  overrides: AlertRuleOverrides | undefined,
+): AlertRules {
+  const base = { ...DEFAULT_ALERT_RULES, ...defaults };
+  return {
+    dropPercent: overrides?.dropPercent ?? base.dropPercent,
+    allTimeLow: overrides?.allTimeLow ?? base.allTimeLow,
+    backInStock: overrides?.backInStock ?? base.backInStock,
+  };
+}
+
+/** "10% drop · lowest ever · back in stock", or null when every smart rule is off. */
+export function describeAlertRules(rules: AlertRules): string | null {
+  const parts = [
+    rules.dropPercent > 0 ? `${rules.dropPercent}% drop` : null,
+    rules.allTimeLow ? 'lowest price ever' : null,
+    rules.backInStock ? 'back in stock' : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : null;
+}
 
 export const STATUS_LABELS: Record<string, string> = {
   active: 'Tracking',

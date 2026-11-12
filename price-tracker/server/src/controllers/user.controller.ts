@@ -12,6 +12,14 @@ import {
   disconnectSession,
   listSessions,
 } from '../services/marketplaceSession.service';
+import {
+  cancelTelegramLink,
+  completeTelegramLink,
+  getTelegramStatus,
+  removeTelegramChat,
+  sendTelegramTest,
+  startTelegramLink,
+} from '../services/telegram.service';
 import { asyncHandler, sendOk } from '../utils/http';
 
 export const profile = asyncHandler(async (req: Request, res: Response) => {
@@ -30,6 +38,36 @@ export const patchNotificationSettings = asyncHandler<unknown, unknown, Notifica
     return sendOk(res, { notificationPrefs: user.notificationPrefs });
   },
 );
+
+/* -------------------------------- telegram -------------------------------- */
+
+export const telegramStatus = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await getTelegramStatus(req.auth!.userId));
+});
+
+export const telegramLink = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await startTelegramLink(req.auth!.userId));
+});
+
+export const telegramVerify = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await completeTelegramLink(req.auth!.userId));
+});
+
+export const telegramTest = asyncHandler<unknown, unknown, { chatId?: string }>(
+  async (req, res) => {
+    return sendOk(res, await sendTelegramTest(req.auth!.userId, req.body?.chatId));
+  },
+);
+
+export const telegramCancelLink = asyncHandler(async (req: Request, res: Response) => {
+  await cancelTelegramLink(req.auth!.userId);
+  return sendOk(res, { cancelled: true });
+});
+
+export const telegramRemoveChat = asyncHandler<{ chatId: string }>(async (req, res) => {
+  const chats = await removeTelegramChat(req.auth!.userId, req.params.chatId);
+  return sendOk(res, { chats });
+});
 
 /* --------------------- optional marketplace sessions --------------------- */
 

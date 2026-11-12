@@ -2,6 +2,8 @@ import { del, get, getPaged, patch, post } from './api';
 import type {
   Alert,
   AlertMode,
+  AlertRuleOverrides,
+  AlertRules,
   ComparisonRow,
   DashboardStats,
   HistoryRange,
@@ -12,6 +14,9 @@ import type {
   Product,
   PriceStats,
   SystemHealth,
+  TelegramChat,
+  TelegramLinkStart,
+  TelegramStatus,
   UrlPreview,
   User,
 } from '../types';
@@ -50,6 +55,7 @@ export const productApi = {
     nickname?: string;
     notificationChannel?: NotificationChannel;
     alertMode?: AlertMode;
+    alertRules?: Partial<AlertRuleOverrides>;
     comparisonGroup?: string;
   }) => post<{ product: Product; message: string }>('/products', body),
 
@@ -99,8 +105,23 @@ export const userApi = {
   updateProfile: (body: { name?: string; phone?: string | null; timezone?: string }) =>
     patch<{ user: User }>('/user', body),
 
-  updateNotificationSettings: (body: Partial<NotificationPrefs>) =>
-    post<{ notificationPrefs: NotificationPrefs }>('/user/notification-settings', body),
+  updateNotificationSettings: (
+    body: Partial<Omit<NotificationPrefs, 'alertRules'>> & { alertRules?: Partial<AlertRules> },
+  ) => post<{ notificationPrefs: NotificationPrefs }>('/user/notification-settings', body),
+
+  telegramStatus: () => get<TelegramStatus>('/user/telegram'),
+  telegramLink: () => post<TelegramLinkStart>('/user/telegram/link'),
+  telegramCancelLink: () => del('/user/telegram/link'),
+  /** Polled while someone taps Start in Telegram. */
+  telegramVerify: () =>
+    post<{ connected: boolean; chat: TelegramChat | null }>('/user/telegram/verify'),
+  /** Tests one chat, or every linked chat when `chatId` is omitted. */
+  telegramTest: (chatId?: string) =>
+    post<{ sent: number; failed: Array<{ chatId: string; reason: string }> }>(
+      '/user/telegram/test',
+      chatId ? { chatId } : {},
+    ),
+  telegramRemoveChat: (chatId: string) => del(`/user/telegram/chats/${encodeURIComponent(chatId)}`),
 
   sessions: () => get<MarketplaceSession[]>('/user/marketplace-sessions'),
 

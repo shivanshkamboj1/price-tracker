@@ -212,6 +212,29 @@ describe('PATCH /api/products/:id', () => {
     const product = await Product.findById(id);
     expect(product?.currentPrice).toBeUndefined();
   });
+
+  it('stores smart alert overrides, and null hands a rule back to the account default', async () => {
+    const client = await createTestClient();
+    const created = await addProduct(client, {
+      alertRules: { dropPercent: 20, allTimeLow: true },
+    }).expect(201);
+    const id = created.body.data.product.id;
+    expect(created.body.data.product.alertRules).toEqual({
+      dropPercent: 20,
+      allTimeLow: true,
+      backInStock: null,
+    });
+
+    const response = await patch(client, `/api/products/${id}`, {
+      alertRules: { dropPercent: null, backInStock: false },
+    }).expect(200);
+
+    expect(response.body.data.product.alertRules).toEqual({
+      dropPercent: null,
+      allTimeLow: true,
+      backInStock: false,
+    });
+  });
 });
 
 describe('DELETE /api/products/:id', () => {

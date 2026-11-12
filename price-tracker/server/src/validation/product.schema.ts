@@ -6,7 +6,7 @@ import {
   NOTIFICATION_CHANNELS,
   PRODUCT_STATUSES,
 } from '../config/constants';
-import { objectId, pagination, productUrl } from './common';
+import { dropPercent, objectId, pagination, productUrl } from './common';
 
 const targetPrice = z
   .number({ invalid_type_error: 'Enter a target price' })
@@ -25,6 +25,18 @@ const checkInterval = z
     `Choose one of: ${CHECK_INTERVAL_CHOICES.join(', ')} minutes`,
   );
 
+/**
+ * Per-product smart alert overrides. Omitted keys are left alone; `null` clears
+ * an override so the account default applies again.
+ */
+const alertRules = z
+  .object({
+    dropPercent: dropPercent.nullable().optional(),
+    allTimeLow: z.boolean().nullable().optional(),
+    backInStock: z.boolean().nullable().optional(),
+  })
+  .strict();
+
 export const createProductSchema = z.object({
   productUrl,
   targetPrice,
@@ -32,6 +44,7 @@ export const createProductSchema = z.object({
   nickname: z.string().trim().max(120).optional(),
   notificationChannel: z.enum(NOTIFICATION_CHANNELS).optional(),
   alertMode: z.enum(ALERT_MODES).optional(),
+  alertRules: alertRules.optional(),
   comparisonGroup: z.string().trim().max(64).optional(),
   /**
    * Accepted but never trusted: the server detects the marketplace from the URL
@@ -47,6 +60,7 @@ export const updateProductSchema = z
     nickname: z.string().trim().max(120).nullable().optional(),
     notificationChannel: z.enum(NOTIFICATION_CHANNELS).optional(),
     alertMode: z.enum(ALERT_MODES).optional(),
+    alertRules: alertRules.optional(),
     comparisonGroup: z.string().trim().max(64).nullable().optional(),
     status: z.enum(['active', 'paused']).optional(),
   })
@@ -57,6 +71,7 @@ export const productSettingsSchema = z
     checkInterval: checkInterval.optional(),
     notificationChannel: z.enum(NOTIFICATION_CHANNELS).optional(),
     alertMode: z.enum(ALERT_MODES).optional(),
+    alertRules: alertRules.optional(),
     comparisonGroup: z.string().trim().max(64).nullable().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, { message: 'Nothing to update' });

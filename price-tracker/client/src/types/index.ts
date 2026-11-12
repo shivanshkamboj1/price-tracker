@@ -1,8 +1,9 @@
 export type Marketplace = 'amazon_in' | 'flipkart';
 export type ProductStatus = 'active' | 'paused' | 'unavailable' | 'error' | 'deleted';
 export type Availability = 'in_stock' | 'out_of_stock' | 'unknown';
-export type NotificationChannel = 'sms' | 'whatsapp' | 'call' | 'none';
+export type NotificationChannel = 'sms' | 'whatsapp' | 'call' | 'telegram' | 'none';
 export type AlertMode = 'once' | 'always';
+export type AlertType = 'target_reached' | 'all_time_low' | 'price_drop' | 'back_in_stock';
 export type HistoryRange = '24h' | '7d' | '30d' | '3m' | 'all';
 
 export interface ApiEnvelope<T> {
@@ -23,11 +24,27 @@ export interface QuietHours {
   endHour: number;
 }
 
+/** Smart alert rules: account defaults. `dropPercent` 0 means off. */
+export interface AlertRules {
+  dropPercent: number;
+  allTimeLow: boolean;
+  backInStock: boolean;
+}
+
+/** Per-product overrides; null means the account default applies. */
+export interface AlertRuleOverrides {
+  dropPercent: number | null;
+  allTimeLow: boolean | null;
+  backInStock: boolean | null;
+}
+
 export interface NotificationPrefs {
   channel: NotificationChannel;
   alertMode: AlertMode;
   minIntervalMinutes: number;
   quietHours: QuietHours;
+  /** Missing on accounts created before smart alerts; the server defaults apply. */
+  alertRules?: AlertRules;
 }
 
 export interface User {
@@ -36,6 +53,7 @@ export interface User {
   name: string;
   phone?: string;
   phoneVerified: boolean;
+  telegramChats?: Array<{ chatId: string; chatTitle?: string; linkedAt: string }>;
   timezone: string;
   role: 'user' | 'admin';
   notificationPrefs: NotificationPrefs;
@@ -70,6 +88,7 @@ export interface Product {
   alertMode: AlertMode | null;
   alertArmed: boolean;
   alertCount: number;
+  alertRules: AlertRuleOverrides;
   consecutiveFailures: number;
   errorKind: string | null;
   errorMessage: string | null;
@@ -115,9 +134,13 @@ export interface Alert {
     marketplace: Marketplace;
     productUrl: string;
   } | null;
-  type: string;
+  type: AlertType;
+  /** Every trigger that fired on this check, highest priority first. */
+  reasons: AlertType[];
   price: number;
   targetPrice: number;
+  dropFromPrice: number | null;
+  previousLowestPrice: number | null;
   currency: string;
   channel: NotificationChannel;
   status: 'pending' | 'sent' | 'failed' | 'skipped';
@@ -211,6 +234,29 @@ export interface SystemHealth {
     failures24h: number;
   }>;
   notifications24h: { sent: number; failed: number; pending: number; skipped: number };
+}
+
+export interface TelegramChat {
+  chatId: string;
+  chatTitle: string | null;
+  linkedAt: string;
+}
+
+export interface TelegramStatus {
+  /** False when the server has no TELEGRAM_BOT_TOKEN. */
+  configured: boolean;
+  connected: boolean;
+  botUsername: string | null;
+  /** Every linked chat receives every Telegram alert. */
+  chats: TelegramChat[];
+  maxChats: number;
+}
+
+export interface TelegramLinkStart {
+  botUsername: string;
+  code: string;
+  url: string;
+  expiresAt: string;
 }
 
 export interface Paged<T> {

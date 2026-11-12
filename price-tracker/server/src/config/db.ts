@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { env } from './env';
 import { logger } from './logger';
+import { migrateLegacyTelegramChat } from '../models/User';
 
 mongoose.set('strictQuery', true);
 // `sanitizeFilter` is deliberately not set globally: it wraps every operator
@@ -23,6 +24,10 @@ export async function connectDatabase(uri: string = env.MONGO_URI): Promise<type
     autoIndex: env.NODE_ENV !== 'production',
   });
   logger.info('mongodb connected');
+
+  const migrated = await migrateLegacyTelegramChat();
+  if (migrated > 0) logger.info({ migrated }, 'moved single Telegram links into telegramChats');
+
   return mongoose;
 }
 

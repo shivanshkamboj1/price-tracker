@@ -6,7 +6,7 @@ import { Button } from '../components/Button';
 import { EmptyState, ErrorState, Skeleton } from '../components/Feedback';
 import { notificationApi } from '../services/endpoints';
 import { useToast } from '../hooks/useToast';
-import { formatDateTime, formatMoney } from '../utils/format';
+import { ALERT_TYPE_LABELS, CHANNEL_LABELS, formatDateTime, formatMoney } from '../utils/format';
 import type { Alert } from '../types';
 
 const DELIVERY_TONE = {
@@ -15,6 +15,40 @@ const DELIVERY_TONE = {
   failed: 'bad',
   skipped: 'warn',
 } as const;
+
+/** One line explaining why this alert went out, led by its headline trigger. */
+function describeAlert(alert: Alert): React.ReactNode {
+  const price = <span className="font-semibold text-good">{formatMoney(alert.price, alert.currency)}</span>;
+  const money = (value: number | null) => formatMoney(value, alert.currency);
+
+  switch (alert.reasons[0] ?? alert.type) {
+    case 'all_time_low':
+      return (
+        <>
+          New lowest price {price}
+          {alert.previousLowestPrice !== null && <> (previous low {money(alert.previousLowestPrice)})</>}
+        </>
+      );
+    case 'price_drop': {
+      const from = alert.dropFromPrice;
+      const percent = from ? Math.round(((from - alert.price) / from) * 100) : null;
+      return (
+        <>
+          Dropped to {price}
+          {from !== null && <> from {money(from)}{percent ? ` (−${percent}%)` : ''}</>}
+        </>
+      );
+    }
+    case 'back_in_stock':
+      return <>Back in stock at {price}</>;
+    default:
+      return (
+        <>
+          Hit {price} against a target of {money(alert.targetPrice)}
+        </>
+      );
+  }
+}
 
 function AlertRow({
   alert,
@@ -43,6 +77,11 @@ function AlertRow({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5">
               {alert.product && <MarketplaceBadge marketplace={alert.product.marketplace} />}
+              {alert.reasons.map((reason) => (
+                <Badge key={reason} tone="brand">
+                  {ALERT_TYPE_LABELS[reason] ?? reason}
+                </Badge>
+              ))}
               <Badge tone={DELIVERY_TONE[alert.status]}>{alert.status}</Badge>
               {alert.state === 'acknowledged' && <Badge tone="neutral">acknowledged</Badge>}
               {unread && <Badge tone="brand">new</Badge>}
@@ -55,13 +94,11 @@ function AlertRow({
               {alert.product?.title ?? 'Product'}
             </Link>
 
-            <p className="tnum mt-1 text-sm text-muted">
-              Hit <span className="font-semibold text-good">{formatMoney(alert.price, alert.currency)}</span>{' '}
-              against a target of {formatMoney(alert.targetPrice, alert.currency)}
-            </p>
+            <p className="tnum mt-1 text-sm text-muted">{describeAlert(alert)}</p>
 
             <p className="mt-1 text-xs text-faint">
-              {formatDateTime(alert.sentAt ?? alert.createdAt)} · via {alert.channel}
+              {formatDateTime(alert.sentAt ?? alert.createdAt)} · via{' '}
+              {CHANNEL_LABELS[alert.channel] ?? alert.channel}
             </p>
 
             {alert.failureReason && (
@@ -163,7 +200,7 @@ export function NotificationsPage() {
       ) : alerts.length === 0 ? (
         <EmptyState
           title={unreadOnly ? 'Nothing unread' : 'No alerts yet'}
-          description="When a tracked product reaches your target price, the alert will appear here and go out on your chosen channel."
+          description="When a tracked product reaches your target, drops sharply, hits a new low or comes back in stock, the alert appears here and goes out on your chosen channel."
           action={{ label: 'Add a product', to: '/products/add' }}
         />
       ) : (

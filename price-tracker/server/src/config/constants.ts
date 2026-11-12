@@ -25,11 +25,24 @@ export type CheckErrorKind = (typeof CHECK_ERROR_KINDS)[number];
 export const AVAILABILITIES = ['in_stock', 'out_of_stock', 'unknown'] as const;
 export type Availability = (typeof AVAILABILITIES)[number];
 
-export const NOTIFICATION_CHANNELS = ['sms', 'whatsapp', 'call', 'none'] as const;
+export const NOTIFICATION_CHANNELS = ['sms', 'whatsapp', 'call', 'telegram', 'none'] as const;
 export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
+/** A channel that actually delivers something. */
+export type DeliveryChannel = Exclude<NotificationChannel, 'none'>;
+/** Channels addressed by phone number (delivered through Twilio). */
+export type PhoneChannel = Exclude<DeliveryChannel, 'telegram'>;
 
-export const ALERT_TYPES = ['target_reached', 'price_drop', 'back_in_stock'] as const;
+/**
+ * Listed in priority order: when one check fires several triggers, the first
+ * one becomes the alert's headline and the rest are mentioned in the body.
+ */
+export const ALERT_TYPES = ['target_reached', 'all_time_low', 'price_drop', 'back_in_stock'] as const;
 export type AlertType = (typeof ALERT_TYPES)[number];
+/** Triggers beyond the target price, each switched on per account or per product. */
+export type SmartAlertType = Exclude<AlertType, 'target_reached'>;
+
+/** Choices offered for the percentage-drop alert. 0 means off. */
+export const DROP_PERCENT_CHOICES = [0, 5, 10, 15, 20, 25, 30, 40, 50] as const;
 
 export const ALERT_STATES = ['triggered', 'acknowledged', 'reset'] as const;
 export type AlertState = (typeof ALERT_STATES)[number];

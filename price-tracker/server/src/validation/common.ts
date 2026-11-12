@@ -19,6 +19,13 @@ export const phoneNumber = z
   .trim()
   .regex(/^\+[1-9]\d{7,14}$/, 'Enter the number in international format, e.g. +919876543210');
 
+/** Percentage-drop alert threshold; 0 switches the rule off. */
+export const dropPercent = z
+  .number()
+  .int()
+  .min(0)
+  .max(90, 'Use a drop of at most 90%');
+
 export const timezone = z
   .string()
   .trim()
