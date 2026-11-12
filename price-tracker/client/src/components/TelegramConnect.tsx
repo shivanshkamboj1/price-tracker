@@ -161,7 +161,28 @@ export function TelegramConnect() {
     // Keyed on the link alone: each new link starts one polling loop.
   }, [link]);
 
-  if (statusQuery.isLoading || !status) {
+  if (statusQuery.isError) {
+    const error = statusQuery.error;
+    // A 404 here means the browser has the new client but the API is an older build.
+    const outdated = error instanceof ApiError && error.status === 404;
+    return (
+      <Banner
+        tone="bad"
+        title="Could not load Telegram settings"
+        action={
+          <Button size="sm" variant="secondary" onClick={() => void statusQuery.refetch()}>
+            Try again
+          </Button>
+        }
+      >
+        {outdated
+          ? 'The API is running an older version without Telegram support. Rebuild the server (npm run build) and restart the API process.'
+          : errorMessage(error, 'The server did not respond. Check that the API is running.')}
+      </Banner>
+    );
+  }
+
+  if (!status) {
     return <p className="text-sm text-muted">Checking Telegram…</p>;
   }
 
