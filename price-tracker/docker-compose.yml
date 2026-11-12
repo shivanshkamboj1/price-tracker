@@ -1,0 +1,132 @@
+# Development environment.
+#
+# The API, the scheduler and the worker are separate services built from the
+# same image. Workers scale horizontally without any code change:
+#
+#   docker compose up --scale backend=2 --scale worker=3
+#
+# The scheduler stays a singleton by design — a Redis lock enforces that even if
+# a second one is started by accident.
+
+name: price-tracker
+
+services:
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: price_tracker
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - '27017:27017'
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    volumes:
+      - redis-data:/data
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./server
+      target: dev
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: api
+      MONGO_URI: mongodb://mongodb:27017/price_tracker
+      REDIS_URL: redis://redis:6379
+      LOG_PRETTY: 'true'
+    ports:
+      - '4000:4000'
+    volumes:
+      - ./server/src:/app/src:ro
+      - ./server/package.json:/app/package.json:ro
+      - ./server/tsconfig.json:/app/tsconfig.json:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Performs price checks. Scale this, not the API, when there is a backlog.
+  worker:
+    build:
+      context: ./server
+      target: dev
+    restart: unless-stopped
+    command: ['npm', 'run', 'dev:worker']
+    env_file: .env
+    environment:
+      SERVICE_NAME: worker
+      MONGO_URI: mongodb://mongodb:27017/price_tracker
+      REDIS_URL: redis://redis:6379
+      LOG_PRETTY: 'true'
+    volumes:
+      - ./server/src:/app/src:ro
+      - ./server/package.json:/app/package.json:ro
+      - ./server/tsconfig.json:/app/tsconfig.json:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Decides which products are due. Singleton.
+  scheduler:
+    build:
+      context: ./server
+      target: dev
+    restart: unless-stopped
+    command: ['npm', 'run', 'dev:scheduler']
+    env_file: .env
+    environment:
+      SERVICE_NAME: scheduler
+      MONGO_URI: mongodb://mongodb:27017/price_tracker
+      REDIS_URL: redis://redis:6379
+      LOG_PRETTY: 'true'
+    volumes:
+      - ./server/src:/app/src:ro
+      - ./server/package.json:/app/package.json:ro
+      - ./server/tsconfig.json:/app/tsconfig.json:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./client
+      target: dev
+    restart: unless-stopped
+    environment:
+      VITE_API_TARGET: http://backend:4000
+    ports:
+      - '5173:5173'
+    volumes:
+      - ./client/src:/app/src:ro
+      - ./client/index.html:/app/index.html:ro
+      - ./client/vite.config.ts:/app/vite.config.ts:ro
+      - ./client/tailwind.config.js:/app/tailwind.config.js:ro
+    depends_on:
+      - backend
+
+volumes:
+  mongo-data:
+  redis-data:

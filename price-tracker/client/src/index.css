@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light: a warm off-white ground with near-black ink. */
+    --canvas: 249 250 252;
+    --surface: 255 255 255;
+    --raised: 244 246 250;
+    --line: 226 232 240;
+    --ink: 15 23 42;
+    --muted: 100 116 139;
+    --faint: 148 163 184;
+
+    --brand: 79 70 229;
+    --brand-soft: 238 242 255;
+    --brand-ink: 67 56 202;
+
+    /* Status colours carry AA text contrast against the light surface
+       (4.5:1+) and are always paired with a glyph or label, never colour alone. */
+    --good: 4 120 87;
+    --warn: 180 83 9;
+    --bad: 220 38 38;
+
+    /* The chart's single data series. Validated against the light chart surface. */
+    --series: 79 70 229;
+  }
+
+  .dark {
+    --canvas: 9 11 17;
+    --surface: 17 20 29;
+    --raised: 25 29 41;
+    --line: 39 45 60;
+    --ink: 237 241 248;
+    --muted: 148 160 180;
+    --faint: 105 117 138;
+
+    --brand: 129 124 255;
+    --brand-soft: 32 32 62;
+    --brand-ink: 176 172 255;
+
+    --good: 52 199 143;
+    --warn: 234 160 60;
+    --bad: 248 113 113;
+
+    /* The chart's single data series. Validated against the dark chart surface. */
+    --series: 129 124 255;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-ink antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
+  }
+
+  /* Tabular figures keep price columns from jittering as values change. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand/60 ring-offset-2 ring-offset-canvas;
+  }
+
+  ::selection {
+    @apply bg-brand/20;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-line bg-surface shadow-card;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-ink
+           placeholder:text-faint transition
+           focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/25;
+  }
+
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-ink;
+  }
+
+  .hint {
+    @apply mt-1.5 text-xs text-muted;
+  }
+
+  .error-text {
+    @apply mt-1.5 text-xs font-medium text-bad;
+  }
+
+  .skeleton {
+    @apply relative overflow-hidden rounded-lg bg-raised;
+  }
+
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0 -translate-x-full animate-shimmer
+           bg-gradient-to-r from-transparent via-white/25 to-transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

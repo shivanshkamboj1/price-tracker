@@ -1,0 +1,21 @@
+{
+  "name": "price-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Amazon India and Flipkart price tracker — React + Express + MongoDB + BullMQ",
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix client install",
+    "dev:api": "npm --prefix server run dev",
+    "dev:worker": "npm --prefix server run dev:worker",
+    "dev:scheduler": "npm --prefix server run dev:scheduler",
+    "dev:client": "npm --prefix client run dev",
+    "build": "npm --prefix server run build && npm --prefix client run build",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix client run typecheck",
+    "test": "npm --prefix server test",
+    "docker:up": "docker compose up --build",
+    "docker:scale": "docker compose up --build --scale backend=2 --scale worker=3"
+  },
+  "engines": {
+    "node": ">=18.18"
+  }
+}
