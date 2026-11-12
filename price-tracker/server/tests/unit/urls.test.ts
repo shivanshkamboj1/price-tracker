@@ -59,9 +59,21 @@ describe('Flipkart URL normalisation', () => {
     );
   });
 
-  it('falls back to the itm id when no pid is present', () => {
+  it('falls back to the itm id when no pid is present, without writing it into the URL', () => {
     const identity = normalizeFlipkartUrl('https://www.flipkart.com/some-product/p/itmf3a9b8c7d');
     expect(identity.externalProductId).toBe('ITMF3A9B8C7D');
+    // Flipkart answers an unknown pid with a generic page, so none is invented.
+    expect(identity.canonicalUrl).toBe('https://www.flipkart.com/some-product/p/itmf3a9b8c7d');
+  });
+
+  it('drops a pid that only repeats the itm id, as earlier versions stored it', () => {
+    const identity = normalizeFlipkartUrl(
+      'https://www.flipkart.com/samsung-galaxy-watch-8/p/itm9c75e1ed10471?pid=ITM9C75E1ED10471',
+    );
+    expect(identity.externalProductId).toBe('ITM9C75E1ED10471');
+    expect(identity.canonicalUrl).toBe(
+      'https://www.flipkart.com/samsung-galaxy-watch-8/p/itm9c75e1ed10471',
+    );
   });
 
   it('rejects a search or listing page', () => {
