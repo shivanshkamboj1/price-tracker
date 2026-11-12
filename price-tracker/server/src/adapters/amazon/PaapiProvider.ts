@@ -4,6 +4,7 @@ import { env } from '../../config/env';
 import { AdapterError } from '../../utils/errors';
 import { parsePriceToMinor } from '../../utils/money';
 import { readJsonBody } from '../http/body';
+import { httpAgent } from '../http/dispatcher';
 import { normalizeAvailability } from '../parsing';
 import type { FetchContext, ProductDataProvider, ProductIdentity, ProductSnapshot } from '../types';
 
@@ -137,6 +138,7 @@ export class PaapiProvider implements ProductDataProvider {
         body: payload,
         headersTimeout: env.HTTP_TIMEOUT_MS,
         bodyTimeout: env.HTTP_TIMEOUT_MS,
+        dispatcher: httpAgent,
       });
     } catch (err) {
       throw new AdapterError('temporary_error', 'PA-API is unreachable', {

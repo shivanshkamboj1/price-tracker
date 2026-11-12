@@ -5,6 +5,7 @@ import { AdapterError } from '../../utils/errors';
 import { sleep } from '../../utils/time';
 import { ACCEPT_ENCODING, readTextBody } from './body';
 import { CircuitBreaker } from './circuitBreaker';
+import { followRedirects } from './dispatcher';
 import { MarketplaceRateLimiter, type RateLimitOptions } from './rateLimiter';
 import { checkRobots } from './robots';
 
@@ -134,7 +135,7 @@ export class HttpClient {
           },
           headersTimeout: timeout,
           bodyTimeout: timeout,
-          maxRedirections: 5,
+          dispatcher: followRedirects(5),
         });
       } catch (err) {
         lastError = new AdapterError('temporary_error', 'Network request failed', {

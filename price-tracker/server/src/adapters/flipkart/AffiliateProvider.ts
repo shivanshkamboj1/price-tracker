@@ -3,6 +3,7 @@ import { env } from '../../config/env';
 import { AdapterError } from '../../utils/errors';
 import { parsePriceToMinor } from '../../utils/money';
 import { readJsonBody } from '../http/body';
+import { httpAgent } from '../http/dispatcher';
 import type { FetchContext, ProductDataProvider, ProductIdentity, ProductSnapshot } from '../types';
 
 /**
@@ -58,6 +59,7 @@ export class FlipkartAffiliateProvider implements ProductDataProvider {
         },
         headersTimeout: env.HTTP_TIMEOUT_MS,
         bodyTimeout: env.HTTP_TIMEOUT_MS,
+        dispatcher: httpAgent,
       });
     } catch (err) {
       throw new AdapterError('temporary_error', 'Flipkart affiliate API is unreachable', {
