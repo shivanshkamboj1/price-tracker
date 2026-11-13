@@ -68,7 +68,10 @@ export function TelegramConnect() {
   const status = statusQuery.data;
 
   const refresh = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['telegram'] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['telegram'] }),
+      queryClient.invalidateQueries({ queryKey: ['channels'] }),
+    ]);
     await refreshUser();
   };
 

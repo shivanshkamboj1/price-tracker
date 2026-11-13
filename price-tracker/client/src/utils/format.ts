@@ -1,4 +1,4 @@
-import type { AlertRuleOverrides, AlertRules, AlertType, NotificationChannel } from '../types';
+import type { AlertRuleOverrides, AlertRules, AlertType, DeliveryChannel } from '../types';
 
 const SYMBOLS: Record<string, string> = { INR: '₹', USD: '$', EUR: '€' };
 
@@ -92,17 +92,22 @@ export const AVAILABILITY_LABELS: Record<string, string> = {
   unknown: 'Unknown',
 };
 
-export const CHANNEL_OPTIONS: Array<{ value: NotificationChannel; label: string }> = [
-  { value: 'telegram', label: 'Telegram' },
-  { value: 'whatsapp', label: 'WhatsApp' },
-  { value: 'sms', label: 'SMS' },
-  { value: 'call', label: 'Phone call' },
-  { value: 'none', label: 'No notifications' },
-];
+export const DELIVERY_CHANNELS: DeliveryChannel[] = ['whatsapp', 'telegram', 'sms', 'call'];
 
-export const CHANNEL_LABELS: Record<string, string> = Object.fromEntries(
-  CHANNEL_OPTIONS.map((option) => [option.value, option.label]),
-);
+export const CHANNEL_LABELS: Record<DeliveryChannel, string> = {
+  whatsapp: 'WhatsApp',
+  telegram: 'Telegram',
+  sms: 'SMS',
+  call: 'Phone call',
+};
+
+/** "WhatsApp and Telegram", or "no channels". */
+export function describeChannels(channels: DeliveryChannel[]): string {
+  const labels = channels.map((channel) => CHANNEL_LABELS[channel] ?? channel);
+  if (labels.length === 0) return 'no channels';
+  if (labels.length === 1) return labels[0]!;
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+}
 
 /** Mirrors the server's account defaults for users who have never saved any. */
 export const DEFAULT_ALERT_RULES: AlertRules = { dropPercent: 0, allTimeLow: false, backInStock: true };

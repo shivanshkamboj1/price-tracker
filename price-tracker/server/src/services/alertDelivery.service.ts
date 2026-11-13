@@ -146,10 +146,9 @@ export async function deliverAlert(alertId: string): Promise<DeliveryOutcome> {
   }
 
   const channels = alertChannels(alert);
-  const whatsappLinked =
-    channels.includes('whatsapp') && (user.whatsappRecipients?.length ?? 0) > 0
-      ? Boolean(await getLinkedWhatsAppAccount())
-      : false;
+  const whatsappLinked = channels.includes('whatsapp')
+    ? Boolean(await getLinkedWhatsAppAccount())
+    : false;
   const { destinations, unreachable } = plan(channels, user, whatsappLinked);
   const unreachableText = unreachable.map((u) => `${CHANNEL_NAME[u.channel]}: ${u.reason}`);
 

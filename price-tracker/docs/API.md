@@ -146,7 +146,7 @@ All product routes require authentication and are scoped to the caller.
   "targetPrice": 19999,
   "checkInterval": 360,               // minutes: 15 30 60 180 360 720 1440
   "nickname": "AirPods for Dad",      // optional
-  "notificationChannel": "telegram",  // optional: telegram | whatsapp | sms | call | none
+  "notificationChannels": ["whatsapp", "telegram"], // optional; omit = account channels, [] = none
   "alertMode": "once",                // optional: once | always
   "alertRules": {                     // optional; each key overrides the account default
     "dropPercent": 10,                //   0 = off, 1–90
@@ -208,7 +208,7 @@ Any subset of:
   "targetPrice": 17500,
   "checkInterval": 720,
   "nickname": "New name",        // null clears it
-  "notificationChannel": "sms",
+  "notificationChannels": ["sms"], // null = account channels again, [] = none
   "alertMode": "always",
   "alertRules": { "dropPercent": null, "backInStock": false }, // null = account default
   "comparisonGroup": null,
@@ -221,7 +221,7 @@ failure counter and schedules a prompt check. `200` → `{ "product": ProductDto
 
 ### `PATCH /api/products/:id/settings`
 
-Same as above, restricted to `checkInterval`, `notificationChannel`, `alertMode`,
+Same as above, restricted to `checkInterval`, `notificationChannels`, `alertMode`,
 `alertRules` and `comparisonGroup`.
 
 ### `DELETE /api/products/:id`
@@ -317,16 +317,30 @@ for drop and lowest-ever alerts.
 ### `PATCH /api/user`
 
 ```jsonc
-{ "name": "New Name", "phone": "+919876543210", "timezone": "Asia/Kolkata" }
+{ "phone": "+919876543210", "timezone": "Asia/Kolkata" }   // either or both
 ```
 
-`phone: null` removes the number. A changed number resets `phoneVerified`.
+`phone` is only used for SMS and call alerts; `null` removes it. A changed number
+resets `phoneVerified`. `timezone` is used for quiet hours.
+
+### `GET /api/user/channels`
+
+What each delivery channel can do right now:
+
+```jsonc
+{ "channels": [
+  { "channel": "whatsapp", "available": true,  "ready": true,  "detail": "2 numbers" },
+  { "channel": "telegram", "available": true,  "ready": false, "detail": "Connect a chat first" },
+  { "channel": "sms",      "available": false, "ready": false, "detail": "Needs Twilio on the server" },
+  { "channel": "call",     "available": false, "ready": false, "detail": "Needs Twilio on the server" }
+] }
+```
 
 ### `POST /api/user/notification-settings`
 
 ```jsonc
 {
-  "channel": "telegram",          // telegram | whatsapp | sms | call | none
+  "channels": ["whatsapp", "telegram"], // any of whatsapp | telegram | sms | call; [] = off
   "alertMode": "once",            // once | always
   "minIntervalMinutes": 360,
   "quietHours": { "enabled": true, "startHour": 22, "endHour": 8 },
@@ -335,6 +349,25 @@ for drop and lowest-ever alerts.
 ```
 
 `200` → `{ "notificationPrefs": { … } }`
+
+### WhatsApp
+
+Alerts go *from* one linked WhatsApp account *to* up to 10 numbers; every number
+receives every WhatsApp alert. The connection is held by the worker process.
+
+| Method | Path | |
+|---|---|---|
+| `GET` | `/api/user/whatsapp` | `{ enabled, workerOnline, status, linked, account, qrDataUrl, pairingCode, error, restricted, recipients: [{ id, phone, name, addedAt }], maxRecipients }` — poll while `status` is `linking` |
+| `POST` | `/api/user/whatsapp/link` | body `{ method: "qr" }` or `{ method: "code", phone }`; the QR code or pairing code then appears in the status |
+| `DELETE` | `/api/user/whatsapp/link` | abandons a link in progress |
+| `DELETE` | `/api/user/whatsapp` | unlinks the sending account; `{ removedFromPhone }` (false when no worker was running to tell WhatsApp) |
+| `POST` | `/api/user/whatsapp/recipients` | body `{ phone, name? }`; the account must be connected and the number on WhatsApp. `{ recipients }` |
+| `DELETE` | `/api/user/whatsapp/recipients/:recipientId` | `{ recipients }` |
+| `POST` | `/api/user/whatsapp/test` | body `{ recipientId? }`; tests one number, or all. `{ sent, failed: [{ recipientId, reason }] }` |
+
+`status` is `offline` (no worker), `not_linked`, `linking`, `connecting`,
+`connected` or `reconnecting`. With no worker running, link, add and test return
+`400` saying so.
 
 ### Telegram
 
@@ -446,7 +479,7 @@ Liveness probe: `{ "status": "ok", "uptime": 1204 }`.
   "checkInterval": 360,
   "nextCheckAt": "…", "lastCheckedAt": "…", "lastPriceChangedAt": "…",
 
-  "notificationChannel": null, "alertMode": null,
+  "notificationChannels": null, "alertMode": null,   // null = account channels
   "alertArmed": false, "alertCount": 2,
 
   "consecutiveFailures": 0, "errorKind": null, "errorMessage": null,

@@ -2,7 +2,7 @@ import { Outlet } from 'react-router-dom';
 
 const POINTS = [
   'Track Amazon India and Flipkart listings side by side.',
-  'Get a WhatsApp or SMS alert the moment a price meets your target.',
+  'Get a WhatsApp or Telegram alert the moment a price meets your target.',
   'See the full price history, not just today’s number.',
 ];
 

@@ -1,7 +1,8 @@
 export type Marketplace = 'amazon_in' | 'flipkart';
 export type ProductStatus = 'active' | 'paused' | 'unavailable' | 'error' | 'deleted';
 export type Availability = 'in_stock' | 'out_of_stock' | 'unknown';
-export type NotificationChannel = 'sms' | 'whatsapp' | 'call' | 'telegram' | 'none';
+/** Every chosen channel gets every alert. */
+export type DeliveryChannel = 'whatsapp' | 'telegram' | 'sms' | 'call';
 export type AlertMode = 'once' | 'always';
 export type AlertType = 'target_reached' | 'all_time_low' | 'price_drop' | 'back_in_stock';
 export type HistoryRange = '24h' | '7d' | '30d' | '3m' | 'all';
@@ -39,7 +40,8 @@ export interface AlertRuleOverrides {
 }
 
 export interface NotificationPrefs {
-  channel: NotificationChannel;
+  /** Empty means notifications are off. */
+  channels: DeliveryChannel[];
   alertMode: AlertMode;
   minIntervalMinutes: number;
   quietHours: QuietHours;
@@ -54,6 +56,7 @@ export interface User {
   phone?: string;
   phoneVerified: boolean;
   telegramChats?: Array<{ chatId: string; chatTitle?: string; linkedAt: string }>;
+  whatsappRecipients?: Array<{ _id: string; phone: string; name?: string; addedAt: string }>;
   timezone: string;
   role: 'user' | 'admin';
   notificationPrefs: NotificationPrefs;
@@ -84,7 +87,8 @@ export interface Product {
   nextCheckAt: string | null;
   lastCheckedAt: string | null;
   lastPriceChangedAt: string | null;
-  notificationChannel: NotificationChannel | null;
+  /** null = the account's channels; [] = no notifications for this product. */
+  notificationChannels: DeliveryChannel[] | null;
   alertMode: AlertMode | null;
   alertArmed: boolean;
   alertCount: number;
@@ -142,8 +146,10 @@ export interface Alert {
   dropFromPrice: number | null;
   previousLowestPrice: number | null;
   currency: string;
-  channel: NotificationChannel;
-  status: 'pending' | 'sent' | 'failed' | 'skipped';
+  channels: DeliveryChannel[];
+  /** How each channel fared. */
+  channelOutcomes: Array<{ channel: DeliveryChannel; status: DeliveryStatus }>;
+  status: DeliveryStatus;
   state: 'triggered' | 'acknowledged' | 'reset';
   message: string;
   failureReason: string | null;
@@ -151,6 +157,8 @@ export interface Alert {
   readAt: string | null;
   createdAt: string;
 }
+
+export type DeliveryStatus = 'pending' | 'sent' | 'failed' | 'skipped';
 
 export interface DashboardStats {
   trackedProducts: number;
@@ -257,6 +265,46 @@ export interface TelegramLinkStart {
   code: string;
   url: string;
   expiresAt: string;
+}
+
+export interface ChannelSummary {
+  channel: DeliveryChannel;
+  /** The server supports it. */
+  available: boolean;
+  /** Choosing it now would reach somebody. */
+  ready: boolean;
+  /** Who it reaches, or what is missing. */
+  detail: string;
+}
+
+export type WhatsAppConnectionStatus =
+  | 'offline'
+  | 'not_linked'
+  | 'linking'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting';
+
+export interface WhatsAppRecipient {
+  id: string;
+  phone: string;
+  name: string | null;
+  addedAt: string;
+}
+
+export interface WhatsAppStatus {
+  enabled: boolean;
+  /** False when the worker process is not running. */
+  workerOnline: boolean;
+  status: WhatsAppConnectionStatus;
+  linked: boolean;
+  account: { phone: string; name: string | null } | null;
+  qrDataUrl: string | null;
+  pairingCode: string | null;
+  error: string | null;
+  restricted: boolean;
+  recipients: WhatsAppRecipient[];
+  maxRecipients: number;
 }
 
 export interface Paged<T> {

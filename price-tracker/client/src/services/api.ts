@@ -122,6 +122,7 @@ export async function patch<T>(url: string, body?: unknown): Promise<T> {
   return data.data;
 }
 
-export async function del(url: string): Promise<void> {
-  await http.delete(url);
+export async function del<T = void>(url: string): Promise<T> {
+  const { data } = await http.delete<ApiEnvelope<T>>(url);
+  return data?.data as T;
 }

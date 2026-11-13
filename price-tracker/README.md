@@ -54,7 +54,7 @@ behind a marketplace-adapter interface.
                         AmazonAdapter      FlipkartAdapter
                                         │
                               ┌─────────▼──────────┐
-                              │ NotificationService│──▶ Twilio (SMS / WhatsApp)
+                              │ NotificationService│──▶ WhatsApp · Telegram · Twilio (SMS / call)
                               └────────────────────┘
 ```
 
@@ -233,16 +233,31 @@ loses one, and delivery retries on its own schedule.
 
 ### Channels
 
+Pick any number of channels under *Settings → Alerts → Send alerts to*; every
+ticked channel gets every alert, and a product can choose its own set (or none).
+A retry only re-sends to the chats or numbers that failed, on whichever channel.
+
+- **WhatsApp** — sent *from* a WhatsApp account you link (a spare or temporary
+  number), *to* the numbers you add. *Settings → WhatsApp*: first **Link with QR
+  code** (or a pairing code) and scan it from that phone's *Linked devices*, the way
+  WhatsApp Web is linked; then add up to 10 numbers, each checked on WhatsApp as it
+  is added. The connection lives in the **worker** — exactly one worker holds it,
+  elected through a Redis lock, and the API reaches it through the `whatsapp`
+  queue — so the worker must be running. Session keys are stored in MongoDB,
+  encrypted with `ENCRYPTION_KEY`. This uses the WhatsApp Web protocol (Baileys),
+  not an official business API: WhatsApp may restrict or ban a number that sends
+  automated messages, so use one you can afford to lose. Needs Node 20.19+.
 - **Telegram** — create a bot with [@BotFather](https://t.me/BotFather), set
   `TELEGRAM_BOT_TOKEN`, restart, then *Settings → Telegram → Connect* and tap
   **Start** in Telegram. No webhook or public URL is needed. Connect up to 10
   accounts or groups; each gets every alert. To add someone else, use *Add another
   Telegram account* and share the link. For a group, add the bot and send it the
   `/start <code>` shown on the settings page.
-- **WhatsApp, SMS, phone call** — via Twilio, to the mobile number on your profile.
+- **SMS, phone call** — via Twilio, to the mobile number under *Settings → SMS and
+  phone calls* (shown once Twilio is configured).
 
 Twilio and Telegram credentials live only in the backend environment. Without
-Twilio the app runs normally and logs the message it would have sent.
+Twilio the app runs normally and logs the SMS or call it would have made.
 
 ---
 
@@ -334,7 +349,8 @@ price-tracker/
 │       ├── routes/
 │       ├── scheduler/
 │       ├── services/          # business logic
-│       │   └── notification/  # NotificationService interface + Twilio
+│       │   ├── notification/  # transports: WhatsApp, Telegram, Twilio (SMS / call)
+│       │   └── whatsapp/      # linked-device connection, owner election, command bridge
 │       ├── utils/
 │       ├── workers/
 │       ├── app.ts   server.ts   worker.ts   scheduler.ts
@@ -393,8 +409,9 @@ Nothing else changes — not the worker, not the scheduler, not the API, not the
 | `FRONTEND_URL` | CORS allow-list entry |
 | `JWT_SECRET` | signs access tokens — 32+ characters |
 | `ENCRYPTION_KEY` | 32 bytes hex; encrypts session artefacts |
-| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | messaging credentials, backend only |
-| `TWILIO_PHONE_NUMBER`, `TWILIO_WHATSAPP_NUMBER` | sender identities |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | SMS / call credentials, backend only |
+| `TWILIO_PHONE_NUMBER` | SMS / call sender |
+| `WHATSAPP_ENABLED` | `false` stops workers connecting WhatsApp (default `true`) |
 | `AMAZON_DATA_SOURCE`, `FLIPKART_DATA_SOURCE` | which data source each adapter uses |
 | `MARKETPLACE_RPM`, `MARKETPLACE_MIN_GAP_MS` | cluster-wide politeness limits |
 | `MIN_CHECK_INTERVAL_MIN` | floor on how often a product may be checked (15 min) |

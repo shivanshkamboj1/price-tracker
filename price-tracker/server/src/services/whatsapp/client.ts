@@ -224,8 +224,9 @@ export class WhatsAppClient {
       browser: baileys.Browsers.appropriate('Chrome'),
       // Stay "offline" so the phone keeps getting its own notifications.
       markOnlineOnConnect: false,
+      // Skip the full chat history. Baileys' default still syncs the small recent
+      // part, which it needs for number <-> LID mappings, so that is left alone.
       syncFullHistory: false,
-      shouldSyncHistoryMessage: () => false,
       ...(version ? { version } : {}),
     });
     this.sock = sock;

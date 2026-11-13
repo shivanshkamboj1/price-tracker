@@ -4,12 +4,13 @@ import type {
   AlertMode,
   AlertRuleOverrides,
   AlertRules,
+  ChannelSummary,
   ComparisonRow,
+  DeliveryChannel,
   DashboardStats,
   HistoryRange,
   HistoryResponse,
   MarketplaceSession,
-  NotificationChannel,
   NotificationPrefs,
   Product,
   PriceStats,
@@ -19,6 +20,8 @@ import type {
   TelegramStatus,
   UrlPreview,
   User,
+  WhatsAppRecipient,
+  WhatsAppStatus,
 } from '../types';
 
 /* --------------------------------- auth --------------------------------- */
@@ -53,7 +56,7 @@ export const productApi = {
     targetPrice: number;
     checkInterval: number;
     nickname?: string;
-    notificationChannel?: NotificationChannel;
+    notificationChannels?: DeliveryChannel[];
     alertMode?: AlertMode;
     alertRules?: Partial<AlertRuleOverrides>;
     comparisonGroup?: string;
@@ -102,8 +105,11 @@ export const notificationApi = {
 export const userApi = {
   profile: () => get<{ user: User }>('/user'),
 
-  updateProfile: (body: { name?: string; phone?: string | null; timezone?: string }) =>
+  /** `phone` is only used for SMS and call alerts. */
+  updateProfile: (body: { phone?: string | null; timezone?: string }) =>
     patch<{ user: User }>('/user', body),
+
+  channels: () => get<{ channels: ChannelSummary[] }>('/user/channels').then((r) => r.channels),
 
   updateNotificationSettings: (
     body: Partial<Omit<NotificationPrefs, 'alertRules'>> & { alertRules?: Partial<AlertRules> },
@@ -122,6 +128,23 @@ export const userApi = {
       chatId ? { chatId } : {},
     ),
   telegramRemoveChat: (chatId: string) => del(`/user/telegram/chats/${encodeURIComponent(chatId)}`),
+
+  /** Polled while linking, for the QR code or pairing code. */
+  whatsappStatus: () => get<WhatsAppStatus>('/user/whatsapp'),
+  whatsappLink: (body: { method: 'qr' } | { method: 'code'; phone: string }) =>
+    post<{ started: true }>('/user/whatsapp/link', body),
+  whatsappCancelLink: () => del('/user/whatsapp/link'),
+  whatsappUnlink: () => del<{ removedFromPhone: boolean }>('/user/whatsapp'),
+  whatsappAddRecipient: (body: { phone: string; name?: string }) =>
+    post<{ recipients: WhatsAppRecipient[] }>('/user/whatsapp/recipients', body),
+  whatsappRemoveRecipient: (id: string) =>
+    del<{ recipients: WhatsAppRecipient[] }>(`/user/whatsapp/recipients/${encodeURIComponent(id)}`),
+  /** Tests one number, or every number when `recipientId` is omitted. */
+  whatsappTest: (recipientId?: string) =>
+    post<{ sent: number; failed: Array<{ recipientId: string; reason: string }> }>(
+      '/user/whatsapp/test',
+      recipientId ? { recipientId } : {},
+    ),
 
   sessions: () => get<MarketplaceSession[]>('/user/marketplace-sessions'),
 

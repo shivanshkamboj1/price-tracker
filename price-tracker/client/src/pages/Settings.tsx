@@ -10,14 +10,15 @@ import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { ApiError } from '../services/api';
 import { TelegramConnect } from '../components/TelegramConnect';
+import { WhatsAppConnect } from '../components/WhatsAppConnect';
+import { ChannelPicker, useChannels } from '../components/ChannelPicker';
 import {
-  CHANNEL_OPTIONS,
   DEFAULT_ALERT_RULES,
   DROP_PERCENT_CHOICES,
   formatDateTime,
   MARKETPLACE_LABELS,
 } from '../utils/format';
-import type { AlertRules, NotificationPrefs } from '../types';
+import type { AlertRules, DeliveryChannel, NotificationPrefs } from '../types';
 
 function Section({
   title,
@@ -37,10 +38,20 @@ function Section({
   );
 }
 
-interface ProfileForm {
-  name: string;
+/** Every IANA zone the browser knows, with the saved one first if the list lacks it. */
+function timezoneOptions(current: string): Array<{ value: string; label: string }> {
+  let zones: string[] = [];
+  try {
+    zones = (Intl as unknown as { supportedValuesOf(key: string): string[] }).supportedValuesOf('timeZone');
+  } catch {
+    // Older browsers: only the saved zone is offered.
+  }
+  const all = zones.includes(current) ? zones : [current, ...zones];
+  return all.map((zone) => ({ value: zone, label: zone.replace(/_/g, ' ') }));
+}
+
+interface PhoneForm {
   phone: string;
-  timezone: string;
 }
 
 export function SettingsPage() {
@@ -54,13 +65,12 @@ export function SettingsPage() {
     if (user?.notificationPrefs) setPrefs(user.notificationPrefs);
   }, [user]);
 
-  const profileForm = useForm<ProfileForm>({
-    values: {
-      name: user?.name ?? '',
-      phone: user?.phone ?? '',
-      timezone: user?.timezone ?? 'Asia/Kolkata',
-    },
+  const phoneForm = useForm<PhoneForm>({
+    values: { phone: user?.phone ?? '' },
   });
+
+  const channelsQuery = useChannels();
+  const timezone = user?.timezone ?? 'Asia/Kolkata';
 
   const sessionsQuery = useQuery({
     queryKey: ['marketplace-sessions'],
@@ -70,11 +80,11 @@ export function SettingsPage() {
   const profileMutation = useMutation({
     mutationFn: userApi.updateProfile,
     onSuccess: async () => {
-      toast('Profile updated', 'success');
-      await refreshUser();
+      toast('Saved', 'success');
+      await Promise.all([refreshUser(), queryClient.invalidateQueries({ queryKey: ['channels'] })]);
     },
     onError: (error) =>
-      toast(error instanceof ApiError ? error.message : 'Could not save your profile', 'error'),
+      toast(error instanceof ApiError ? error.message : 'Could not save that', 'error'),
   });
 
   const prefsMutation = useMutation({
@@ -83,6 +93,8 @@ export function SettingsPage() {
       toast('Notification settings saved', 'success');
       await refreshUser();
     },
+    onError: (error) =>
+      toast(error instanceof ApiError ? error.message : 'Could not save notification settings', 'error'),
   });
 
   const disconnectMutation = useMutation({
@@ -108,65 +120,36 @@ export function SettingsPage() {
     prefsMutation.mutate({ alertRules: patch });
   };
 
+  // Accounts saved before several channels were supported may lack the list for a moment.
+  const channels: DeliveryChannel[] = prefs?.channels ?? [];
+  const summaries = channelsQuery.data;
+  const readyCount = channels.filter(
+    (channel) => summaries?.find((s) => s.channel === channel)?.ready,
+  ).length;
   const channelProblem =
-    prefs?.channel === 'telegram' && !user?.telegramChats?.length
-      ? 'Connect Telegram above, or alerts have nowhere to go.'
-      : prefs && ['sms', 'whatsapp', 'call'].includes(prefs.channel) && !user?.phone
-        ? 'Add your mobile number above, or alerts have nowhere to go.'
+    channels.length === 0
+      ? 'No channels ticked: alerts are recorded here but not sent anywhere.'
+      : summaries && readyCount === 0
+        ? 'None of the ticked channels can reach anyone yet — finish setting one up above.'
         : null;
+
+  // SMS and calls need Twilio and the account's own number; hidden otherwise.
+  const phoneChannelsShown =
+    summaries?.some((s) => (s.channel === 'sms' || s.channel === 'call') && s.available) ||
+    channels.some((channel) => channel === 'sms' || channel === 'call');
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <header>
         <h1 className="text-xl font-semibold tracking-tight text-ink">Settings</h1>
-        <p className="mt-1 text-sm text-muted">Your profile, alerts and connected sessions.</p>
+        <p className="mt-1 text-sm text-muted">Where your alerts go, when, and connected sessions.</p>
       </header>
 
-      <Section title="Profile" description="Used for your alerts and to schedule quiet hours.">
-        <form
-          className="space-y-4"
-          onSubmit={profileForm.handleSubmit((values) =>
-            profileMutation.mutate({
-              name: values.name,
-              phone: values.phone.trim() || null,
-              timezone: values.timezone,
-            }),
-          )}
-        >
-          <TextInput label="Name" {...profileForm.register('name', { required: true })} />
-
-          <TextInput
-            label="Mobile number"
-            type="tel"
-            placeholder="+919876543210"
-            hint="International format. Required for SMS, WhatsApp and call alerts — not for Telegram."
-            error={profileForm.formState.errors.phone?.message}
-            {...profileForm.register('phone', {
-              pattern: {
-                value: /^\+[1-9]\d{7,14}$/,
-                message: 'Use international format, e.g. +919876543210',
-              },
-            })}
-          />
-
-          <TextInput
-            label="Timezone"
-            hint="An IANA name such as Asia/Kolkata."
-            {...profileForm.register('timezone')}
-          />
-
-          {user && !user.phoneVerified && user.phone && (
-            <p className="text-xs text-warn">
-              This number has not been verified yet. Alerts will still be attempted.
-            </p>
-          )}
-
-          <div className="flex justify-end">
-            <Button type="submit" size="sm" loading={profileMutation.isPending}>
-              Save profile
-            </Button>
-          </div>
-        </form>
+      <Section
+        title="WhatsApp"
+        description="Alerts sent from a WhatsApp account you link, to the numbers you choose. Each number gets every WhatsApp alert."
+      >
+        <WhatsAppConnect />
       </Section>
 
       <Section
@@ -176,15 +159,52 @@ export function SettingsPage() {
         <TelegramConnect />
       </Section>
 
+      {phoneChannelsShown && (
+        <Section title="SMS and phone calls" description="Sent through Twilio to your own number.">
+          <form
+            className="space-y-4"
+            onSubmit={phoneForm.handleSubmit((values) =>
+              profileMutation.mutate({ phone: values.phone.trim() || null }),
+            )}
+          >
+            <TextInput
+              label="Mobile number"
+              type="tel"
+              placeholder="+919876543210"
+              hint="International format. Only used for SMS and call alerts."
+              error={phoneForm.formState.errors.phone?.message}
+              {...phoneForm.register('phone', {
+                setValueAs: (value: string) => value.replace(/[\s()-]/g, ''),
+                pattern: {
+                  value: /^(\+[1-9]\d{7,14})?$/,
+                  message: 'Use international format, e.g. +919876543210',
+                },
+              })}
+            />
+            <div className="flex justify-end">
+              <Button type="submit" size="sm" loading={profileMutation.isPending}>
+                Save number
+              </Button>
+            </div>
+          </form>
+        </Section>
+      )}
+
       {prefs && (
-        <Section title="Alerts" description="How and how often we reach you.">
-          <SelectInput
-            label="Delivery channel"
-            value={prefs.channel}
-            onChange={(event) => savePrefs({ channel: event.target.value as NotificationPrefs['channel'] })}
-            options={CHANNEL_OPTIONS}
-            error={channelProblem ?? undefined}
-          />
+        <Section title="Alerts" description="Where and how often we reach you.">
+          <div>
+            <p className="label">Send alerts to</p>
+            <ChannelPicker
+              value={channels}
+              summaries={summaries}
+              onChange={(next) => savePrefs({ channels: next })}
+            />
+            {channelProblem ? (
+              <p className="error-text">{channelProblem}</p>
+            ) : (
+              <p className="hint">Every ticked channel gets every alert. Products can pick their own.</p>
+            )}
+          </div>
 
           <SelectInput
             label="When a product drops below target"
@@ -254,7 +274,7 @@ export function SettingsPage() {
             />
 
             {prefs.quietHours.enabled && (
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
                 <SelectInput
                   label="From"
                   value={String(prefs.quietHours.startHour)}
@@ -280,6 +300,12 @@ export function SettingsPage() {
                     value: hour,
                     label: `${String(hour).padStart(2, '0')}:00`,
                   }))}
+                />
+                <SelectInput
+                  label="In timezone"
+                  value={timezone}
+                  onChange={(event) => profileMutation.mutate({ timezone: event.target.value })}
+                  options={timezoneOptions(timezone)}
                 />
               </div>
             )}

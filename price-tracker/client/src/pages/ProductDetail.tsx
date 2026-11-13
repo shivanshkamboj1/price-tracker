@@ -6,25 +6,25 @@ import { AvailabilityBadge, Badge, MarketplaceBadge, StatusBadge } from '../comp
 import { Button } from '../components/Button';
 import { Banner, ErrorState, Skeleton } from '../components/Feedback';
 import { ConfirmDialog, Modal } from '../components/Modal';
-import { SelectInput, TextInput } from '../components/Field';
+import { SelectInput, TextInput, Toggle } from '../components/Field';
 import { productApi } from '../services/endpoints';
 import { useToast } from '../hooks/useToast';
 import { ApiError } from '../services/api';
 import { AlertRuleFields } from '../components/AlertRuleFields';
+import { ChannelPicker, useChannels } from '../components/ChannelPicker';
 import { useAuth } from '../hooks/useAuth';
 import {
-  CHANNEL_LABELS,
-  CHANNEL_OPTIONS,
   CHECK_INTERVALS,
   DEFAULT_ALERT_RULES,
   describeAlertRules,
+  describeChannels,
   effectiveAlertRules,
   formatDateTime,
   formatMoney,
   intervalLabel,
   relativeTime,
 } from '../utils/format';
-import type { AlertRuleOverrides, HistoryRange, NotificationChannel } from '../types';
+import type { AlertRuleOverrides, DeliveryChannel, HistoryRange } from '../types';
 
 function Metric({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' }) {
   return (
@@ -52,7 +52,9 @@ export function ProductDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [targetDraft, setTargetDraft] = useState('');
   const [intervalDraft, setIntervalDraft] = useState(360);
-  const [channelDraft, setChannelDraft] = useState<'' | NotificationChannel>('');
+  /** null follows the account's channels. */
+  const [channelDraft, setChannelDraft] = useState<DeliveryChannel[] | null>(null);
+  const channelsQuery = useChannels();
   const [rulesDraft, setRulesDraft] = useState<AlertRuleOverrides>({
     dropPercent: null,
     allTimeLow: null,
@@ -129,13 +131,14 @@ export function ProductDetailPage() {
   const openEdit = () => {
     setTargetDraft(String(product.targetPrice));
     setIntervalDraft(product.checkInterval);
-    setChannelDraft(product.notificationChannel ?? '');
+    setChannelDraft(product.notificationChannels);
     setRulesDraft(product.alertRules);
     setEditing(true);
   };
 
   const smartRules = describeAlertRules(effectiveAlertRules(ruleDefaults, product.alertRules));
-  const channel = product.notificationChannel ?? user?.notificationPrefs.channel;
+  const accountChannels = user?.notificationPrefs.channels ?? [];
+  const channels = product.notificationChannels ?? accountChannels;
 
   return (
     <div className="space-y-6">
@@ -259,7 +262,8 @@ export function ProductDetailPage() {
           {product.alertCount} alert{product.alertCount === 1 ? '' : 's'} sent
         </p>
         <p className="mt-1 text-xs text-muted">
-          Alerts{channel ? ` via ${CHANNEL_LABELS[channel] ?? channel}` : ''}: at or below{' '}
+          {channels.length ? `Alerts via ${describeChannels(channels)}` : 'Alerts are not sent anywhere'}
+          {product.notificationChannels ? ' (this product only)' : ''}: at or below{' '}
           {formatMoney(product.targetPrice, product.currency)}
           {smartRules ? ` · ${smartRules}` : ''}
         </p>
@@ -289,8 +293,8 @@ export function ProductDetailPage() {
                 updateMutation.mutate({
                   targetPrice: Number.parseFloat(targetDraft),
                   checkInterval: Number(intervalDraft),
-                  // An empty choice cannot clear the stored channel, so it is only sent when set.
-                  ...(channelDraft ? { notificationChannel: channelDraft } : {}),
+                  // null goes back to the account's channels.
+                  notificationChannels: channelDraft,
                   alertRules: rulesDraft,
                 })
               }
@@ -317,15 +321,18 @@ export function ProductDetailPage() {
             onChange={(event) => setIntervalDraft(Number(event.target.value))}
             options={CHECK_INTERVALS.map((value) => ({ value, label: intervalLabel(value) }))}
           />
-          <SelectInput
-            label="Notify me via"
-            value={channelDraft}
-            onChange={(event) => setChannelDraft(event.target.value as '' | NotificationChannel)}
-            options={[
-              ...(product.notificationChannel ? [] : [{ value: '', label: 'Account default' }]),
-              ...CHANNEL_OPTIONS,
-            ]}
-          />
+          <fieldset className="space-y-3 border-t border-line pt-4">
+            <legend className="sr-only">Notify me via</legend>
+            <Toggle
+              label="Use my account channels"
+              description={`Currently ${describeChannels(accountChannels)}.`}
+              checked={channelDraft === null}
+              onChange={(useAccount) => setChannelDraft(useAccount ? null : [...accountChannels])}
+            />
+            {channelDraft !== null && (
+              <ChannelPicker value={channelDraft} onChange={setChannelDraft} summaries={channelsQuery.data} />
+            )}
+          </fieldset>
           <fieldset className="space-y-3 border-t border-line pt-4">
             <legend className="sr-only">Smart alerts</legend>
             <p className="text-sm font-medium text-ink">Also alert me when</p>

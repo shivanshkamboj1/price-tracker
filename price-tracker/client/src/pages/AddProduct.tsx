@@ -3,16 +3,17 @@ import { useForm } from 'react-hook-form';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/Button';
-import { SelectInput, TextInput } from '../components/Field';
+import { SelectInput, TextInput, Toggle } from '../components/Field';
 import { Banner } from '../components/Feedback';
 import { MarketplaceBadge } from '../components/Badge';
 import { productApi } from '../services/endpoints';
 import { ApiError, fieldErrors } from '../services/api';
 import { useToast } from '../hooks/useToast';
 import { AlertRuleFields } from '../components/AlertRuleFields';
+import { ChannelPicker, useChannels } from '../components/ChannelPicker';
 import { useAuth } from '../hooks/useAuth';
-import { CHANNEL_OPTIONS, CHECK_INTERVALS, DEFAULT_ALERT_RULES, intervalLabel } from '../utils/format';
-import type { AlertRuleOverrides, NotificationChannel, UrlPreview } from '../types';
+import { CHECK_INTERVALS, DEFAULT_ALERT_RULES, describeChannels, intervalLabel } from '../utils/format';
+import type { AlertRuleOverrides, DeliveryChannel, UrlPreview } from '../types';
 
 const NO_OVERRIDES: AlertRuleOverrides = { dropPercent: null, allTimeLow: null, backInStock: null };
 
@@ -21,7 +22,6 @@ interface AddProductForm {
   targetPrice: string;
   checkInterval: number;
   nickname: string;
-  notificationChannel: '' | NotificationChannel;
   alertMode: '' | 'once' | 'always';
   comparisonGroup: string;
 }
@@ -36,6 +36,10 @@ export function AddProductPage() {
   const [alertRules, setAlertRules] = useState<AlertRuleOverrides>(NO_OVERRIDES);
   const { user } = useAuth();
   const ruleDefaults = { ...DEFAULT_ALERT_RULES, ...user?.notificationPrefs.alertRules };
+  const accountChannels = user?.notificationPrefs.channels ?? [];
+  /** null follows the account's channels. */
+  const [channels, setChannels] = useState<DeliveryChannel[] | null>(null);
+  const channelsQuery = useChannels();
 
   const {
     register,
@@ -49,7 +53,6 @@ export function AddProductPage() {
       targetPrice: '',
       checkInterval: 360,
       nickname: '',
-      notificationChannel: '',
       alertMode: '',
       comparisonGroup: '',
     },
@@ -115,7 +118,7 @@ export function AddProductPage() {
         targetPrice: target,
         checkInterval: Number(values.checkInterval),
         nickname: values.nickname.trim() || undefined,
-        notificationChannel: values.notificationChannel || undefined,
+        notificationChannels: channels ?? undefined,
         alertMode: values.alertMode || undefined,
         // Only explicit choices are sent; "Account default" stays unset.
         alertRules: Object.fromEntries(
@@ -206,24 +209,28 @@ export function AddProductPage() {
           {...register('nickname')}
         />
 
-        <div className="grid gap-5 sm:grid-cols-2">
-          <SelectInput
-            label="Notify me via"
-            hint="Leave as default to use your account preference."
-            options={[{ value: '', label: 'Account default' }, ...CHANNEL_OPTIONS]}
-            {...register('notificationChannel')}
-          />
+        <SelectInput
+          label="Alert me"
+          options={[
+            { value: '', label: 'Account default' },
+            { value: 'once', label: 'Once per price drop' },
+            { value: 'always', label: 'Every time it drops below target' },
+          ]}
+          {...register('alertMode')}
+        />
 
-          <SelectInput
-            label="Alert me"
-            options={[
-              { value: '', label: 'Account default' },
-              { value: 'once', label: 'Once per price drop' },
-              { value: 'always', label: 'Every time it drops below target' },
-            ]}
-            {...register('alertMode')}
+        <fieldset className="space-y-3">
+          <legend className="sr-only">Notify me via</legend>
+          <Toggle
+            label="Use my account channels"
+            description={`Alerts for this product go to ${describeChannels(accountChannels)}.`}
+            checked={channels === null}
+            onChange={(useAccount) => setChannels(useAccount ? null : [...accountChannels])}
           />
-        </div>
+          {channels !== null && (
+            <ChannelPicker value={channels} onChange={setChannels} summaries={channelsQuery.data} />
+          )}
+        </fieldset>
 
         <fieldset className="space-y-3">
           <legend className="text-sm font-medium text-ink">Also alert me when</legend>

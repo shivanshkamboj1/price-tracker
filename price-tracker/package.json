@@ -16,6 +16,6 @@
     "docker:scale": "docker compose up --build --scale backend=2 --scale worker=3"
   },
   "engines": {
-    "node": ">=18.18"
+    "node": ">=20.19"
   }
 }

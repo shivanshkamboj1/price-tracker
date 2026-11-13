@@ -235,6 +235,25 @@ describe('PATCH /api/products/:id', () => {
       backInStock: false,
     });
   });
+
+  it('keeps per-product channels apart from "follow the account" and "none"', async () => {
+    const client = await createTestClient();
+    const followsAccount = await addProduct(client).expect(201);
+    expect(followsAccount.body.data.product.notificationChannels).toBeNull();
+    await Product.deleteMany({});
+
+    const created = await addProduct(client, { notificationChannels: ['whatsapp', 'telegram'] }).expect(201);
+    const id = created.body.data.product.id;
+    expect(created.body.data.product.notificationChannels).toEqual(['whatsapp', 'telegram']);
+
+    const muted = await patch(client, `/api/products/${id}`, { notificationChannels: [] }).expect(200);
+    expect(muted.body.data.product.notificationChannels).toEqual([]);
+
+    const reset = await patch(client, `/api/products/${id}`, { notificationChannels: null }).expect(200);
+    expect(reset.body.data.product.notificationChannels).toBeNull();
+
+    await patch(client, `/api/products/${id}`, { notificationChannels: ['fax'] }).expect(422);
+  });
 });
 
 describe('DELETE /api/products/:id', () => {

@@ -7,6 +7,14 @@ import { EmptyState, ErrorState, Skeleton } from '../components/Feedback';
 import { notificationApi } from '../services/endpoints';
 import { useToast } from '../hooks/useToast';
 import { ALERT_TYPE_LABELS, CHANNEL_LABELS, formatDateTime, formatMoney } from '../utils/format';
+import type { DeliveryStatus } from '../types';
+
+const OUTCOME_MARK: Record<DeliveryStatus, string> = {
+  sent: '✓',
+  failed: '✕',
+  skipped: '–',
+  pending: '…',
+};
 import type { Alert } from '../types';
 
 const DELIVERY_TONE = {
@@ -97,8 +105,14 @@ function AlertRow({
             <p className="tnum mt-1 text-sm text-muted">{describeAlert(alert)}</p>
 
             <p className="mt-1 text-xs text-faint">
-              {formatDateTime(alert.sentAt ?? alert.createdAt)} · via{' '}
-              {CHANNEL_LABELS[alert.channel] ?? alert.channel}
+              {formatDateTime(alert.sentAt ?? alert.createdAt)}
+              {alert.channelOutcomes.length === 0 && ' · no channels'}
+              {alert.channelOutcomes.map(({ channel, status }) => (
+                <span key={channel} title={`${CHANNEL_LABELS[channel] ?? channel}: ${status}`}>
+                  {' · '}
+                  {CHANNEL_LABELS[channel] ?? channel} {OUTCOME_MARK[status]}
+                </span>
+              ))}
             </p>
 
             {alert.failureReason && (

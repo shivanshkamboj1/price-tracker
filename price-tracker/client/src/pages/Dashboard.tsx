@@ -6,11 +6,8 @@ import { Badge, MarketplaceBadge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { dashboardApi } from '../services/endpoints';
 import { formatMoney, relativeTime } from '../utils/format';
-import { useAuth } from '../hooks/useAuth';
 
 export function DashboardPage() {
-  const { user } = useAuth();
-
   const statsQuery = useQuery({
     queryKey: ['dashboard', 'stats'],
     queryFn: dashboardApi.stats,
@@ -33,7 +30,7 @@ export function DashboardPage() {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-ink">
-            {user ? `Hello, ${user.name.split(' ')[0]}` : 'Dashboard'}
+            Dashboard
           </h1>
           <p className="mt-1 text-sm text-muted">
             {stats?.nextCheckAt
