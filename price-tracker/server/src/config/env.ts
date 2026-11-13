@@ -43,10 +43,16 @@ const envSchema = z
     /** 32-byte key, hex encoded, used for AES-256-GCM encryption of stored tokens. */
     ENCRYPTION_KEY: z.string().default('0'.repeat(64)),
 
+    /** SMS and voice-call alerts. WhatsApp does not go through Twilio. */
     TWILIO_ACCOUNT_SID: z.string().optional(),
     TWILIO_AUTH_TOKEN: z.string().optional(),
     TWILIO_PHONE_NUMBER: z.string().optional(),
-    TWILIO_WHATSAPP_NUMBER: z.string().optional(),
+
+    /**
+     * WhatsApp alerts through a linked WhatsApp account (WhatsApp Web protocol).
+     * The worker holds the connection; the account is linked from Settings.
+     */
+    WHATSAPP_ENABLED: booleanish.default('true'),
 
     /** Token from @BotFather. Enables the Telegram channel; nothing else is needed. */
     TELEGRAM_BOT_TOKEN: z
@@ -174,7 +180,7 @@ export const corsOrigins = [
 export const telegramConfigured = Boolean(env.TELEGRAM_BOT_TOKEN);
 
 export const twilioConfigured = Boolean(
-  env.TWILIO_ACCOUNT_SID &&
-    env.TWILIO_AUTH_TOKEN &&
-    (env.TWILIO_PHONE_NUMBER || env.TWILIO_WHATSAPP_NUMBER),
+  env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_PHONE_NUMBER,
 );
+
+export const whatsappEnabled = env.WHATSAPP_ENABLED;

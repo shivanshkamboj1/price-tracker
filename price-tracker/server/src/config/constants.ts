@@ -25,12 +25,18 @@ export type CheckErrorKind = (typeof CHECK_ERROR_KINDS)[number];
 export const AVAILABILITIES = ['in_stock', 'out_of_stock', 'unknown'] as const;
 export type Availability = (typeof AVAILABILITIES)[number];
 
-export const NOTIFICATION_CHANNELS = ['sms', 'whatsapp', 'call', 'telegram', 'none'] as const;
-export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
-/** A channel that actually delivers something. */
-export type DeliveryChannel = Exclude<NotificationChannel, 'none'>;
-/** Channels addressed by phone number (delivered through Twilio). */
-export type PhoneChannel = Exclude<DeliveryChannel, 'telegram'>;
+/**
+ * Ways an alert can reach someone. An account (or a product) picks any number of
+ * them, and every chosen channel gets every alert. No channels = no notifications.
+ */
+export const DELIVERY_CHANNELS = ['whatsapp', 'telegram', 'sms', 'call'] as const;
+export type DeliveryChannel = (typeof DELIVERY_CHANNELS)[number];
+/** Channels addressed by the account's own phone number (delivered through Twilio). */
+export type PhoneChannel = Extract<DeliveryChannel, 'sms' | 'call'>;
+
+/** The single-channel values stored before several channels were supported. */
+export const LEGACY_NOTIFICATION_CHANNELS = [...DELIVERY_CHANNELS, 'none'] as const;
+export type LegacyNotificationChannel = (typeof LEGACY_NOTIFICATION_CHANNELS)[number];
 
 /**
  * Listed in priority order: when one check fires several triggers, the first

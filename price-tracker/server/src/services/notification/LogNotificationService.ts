@@ -1,5 +1,5 @@
 import { logger } from '../../config/logger';
-import { priceAlertSms, priceAlertVoice, priceAlertWhatsApp } from './templates';
+import { priceAlertSms, priceAlertVoice } from './templates';
 import type {
   DeliveryResult,
   MessageRequest,
@@ -32,20 +32,12 @@ export class LogNotificationService implements NotificationService {
     return this.emit('sms', message);
   }
 
-  async sendWhatsApp(message: MessageRequest): Promise<DeliveryResult> {
-    return this.emit('whatsapp', message);
-  }
-
   async sendVoiceCall(message: MessageRequest): Promise<DeliveryResult> {
     return this.emit('call', message);
   }
 
   async sendPriceAlert(payload: PhoneAlertPayload): Promise<DeliveryResult> {
-    const render = {
-      whatsapp: priceAlertWhatsApp,
-      call: priceAlertVoice,
-      sms: priceAlertSms,
-    }[payload.channel];
+    const render = payload.channel === 'call' ? priceAlertVoice : priceAlertSms;
     return this.emit(payload.channel, { to: payload.to, body: render(payload) });
   }
 }

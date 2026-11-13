@@ -1,15 +1,15 @@
-import type { NotificationChannel } from '../config/constants';
+import type { DeliveryChannel } from '../config/constants';
 import { User, type AlertRules, type UserDocument } from '../models/User';
 import { notFound } from '../utils/errors';
 
 export interface ProfileUpdate {
-  name?: string;
+  /** Only used for SMS and call alerts. */
   phone?: string | null;
   timezone?: string;
 }
 
 export interface NotificationSettingsUpdate {
-  channel?: NotificationChannel;
+  channels?: DeliveryChannel[];
   alertMode?: 'once' | 'always';
   minIntervalMinutes?: number;
   quietHours?: { enabled: boolean; startHour: number; endHour: number };
@@ -31,7 +31,6 @@ export async function updateProfile(
   patch: ProfileUpdate,
 ): Promise<UserDocument> {
   const user = await load(userId);
-  if (patch.name !== undefined) user.name = patch.name;
   if (patch.timezone !== undefined) user.timezone = patch.timezone;
   if (patch.phone !== undefined) {
     user.phone = patch.phone ?? undefined;
@@ -49,7 +48,7 @@ export async function updateNotificationSettings(
   const user = await load(userId);
   const prefs = user.notificationPrefs;
 
-  if (patch.channel !== undefined) prefs.channel = patch.channel;
+  if (patch.channels !== undefined) prefs.channels = patch.channels;
   if (patch.alertMode !== undefined) prefs.alertMode = patch.alertMode;
   if (patch.minIntervalMinutes !== undefined) prefs.minIntervalMinutes = patch.minIntervalMinutes;
   if (patch.quietHours !== undefined) prefs.quietHours = patch.quietHours;

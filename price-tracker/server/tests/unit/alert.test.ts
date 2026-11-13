@@ -1,5 +1,7 @@
+import { Types } from 'mongoose';
 import {
   evaluateAlert,
+  hasAnyDestination,
   hasDestinationFor,
   resolveAlertSettings,
   type AlertInputs,
@@ -17,7 +19,7 @@ const base: AlertInputs = {
   targetPrice: 4_500_000, // ₹45,000
   alertArmed: false,
   alertMode: 'once',
-  channel: 'whatsapp',
+  channels: ['whatsapp'],
   hasDestination: true,
   minIntervalMinutes: 360,
   quietHours: { enabled: false, startHour: 22, endHour: 8 },
@@ -84,8 +86,14 @@ describe('evaluateAlert', () => {
     });
   });
 
-  it('skips delivery when the channel is off', () => {
-    expect(evaluateAlert({ ...base, channel: 'none' }).reason).toBe('channel_disabled');
+  it('skips delivery when no channel is chosen', () => {
+    expect(evaluateAlert({ ...base, channels: [] }).reason).toBe('channel_disabled');
+  });
+
+  it('carries every chosen channel into the decision', () => {
+    const decision = evaluateAlert({ ...base, channels: ['whatsapp', 'telegram', 'sms'] });
+    expect(decision.shouldAlert).toBe(true);
+    expect(decision.channels).toEqual(['whatsapp', 'telegram', 'sms']);
   });
 
   it('skips delivery when there is nowhere to send it', () => {
@@ -173,7 +181,7 @@ describe('smart alerts', () => {
         rules,
         dropReferencePrice: 5_000_000,
         price: 4_000_000,
-        channel: 'none',
+        channels: [],
       });
       expect(decision.shouldAlert).toBe(false);
       expect(decision.reason).toBe('channel_disabled');
@@ -263,7 +271,7 @@ describe('smart alerts', () => {
 describe('resolveAlertSettings', () => {
   const user = {
     notificationPrefs: {
-      channel: 'telegram' as const,
+      channels: ['telegram' as const],
       alertMode: 'once' as const,
       minIntervalMinutes: 360,
       quietHours: { enabled: false, startHour: 22, endHour: 8 },
@@ -287,6 +295,14 @@ describe('resolveAlertSettings', () => {
     expect(rules).toEqual({ dropPercent: 0, allTimeLow: true, backInStock: true });
   });
 
+  it('uses the account channels unless the product picks its own, including none', () => {
+    expect(resolveAlertSettings({}, user).channels).toEqual(['telegram']);
+    expect(
+      resolveAlertSettings({ notificationChannels: ['whatsapp', 'sms'] }, user).channels,
+    ).toEqual(['whatsapp', 'sms']);
+    expect(resolveAlertSettings({ notificationChannels: [] }, user).channels).toEqual([]);
+  });
+
   it('falls back to built-in defaults for accounts that predate smart alerts', () => {
     const legacy = { notificationPrefs: { ...user.notificationPrefs, alertRules: undefined } };
     expect(resolveAlertSettings({}, legacy as never).rules).toEqual({
@@ -298,13 +314,33 @@ describe('resolveAlertSettings', () => {
 });
 
 describe('hasDestinationFor', () => {
-  it('needs a linked chat for Telegram and a phone number for everything else', () => {
-    const chat = { chatId: '42', linkedAt: new Date() };
+  const chat = { chatId: '42', linkedAt: new Date() };
+  const recipient = {
+    _id: new Types.ObjectId(),
+    phone: '+919876543210',
+    addedAt: new Date(),
+  };
+
+  it('needs a linked chat for Telegram and a phone number for SMS and calls', () => {
     expect(hasDestinationFor('telegram', { phone: '+919876543210' })).toBe(false);
     expect(hasDestinationFor('telegram', { telegramChats: [chat] })).toBe(true);
     expect(hasDestinationFor('telegram', { telegramChats: [] })).toBe(false);
-    expect(hasDestinationFor('whatsapp', { telegramChats: [chat] })).toBe(false);
     expect(hasDestinationFor('sms', { phone: '+919876543210' })).toBe(true);
+    expect(hasDestinationFor('call', { telegramChats: [chat] })).toBe(false);
+  });
+
+  it('needs recipients and a linked sending account for WhatsApp, not the account phone', () => {
+    expect(hasDestinationFor('whatsapp', { phone: '+919876543210' })).toBe(false);
+    expect(hasDestinationFor('whatsapp', { whatsappRecipients: [recipient] })).toBe(true);
+    expect(
+      hasDestinationFor('whatsapp', { whatsappRecipients: [recipient] }, { whatsappLinked: false }),
+    ).toBe(false);
+  });
+
+  it('is satisfied by any one of several channels', () => {
+    expect(hasAnyDestination(['whatsapp', 'telegram'], { telegramChats: [chat] })).toBe(true);
+    expect(hasAnyDestination(['whatsapp', 'sms'], { telegramChats: [chat] })).toBe(false);
+    expect(hasAnyDestination([], { telegramChats: [chat] })).toBe(false);
   });
 });
 

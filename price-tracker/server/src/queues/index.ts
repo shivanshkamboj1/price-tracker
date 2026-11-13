@@ -1,10 +1,13 @@
 import { Queue, type JobsOptions } from 'bullmq';
 import { createQueueConnection } from '../config/redis';
 import type { Marketplace } from '../config/constants';
+import type { WhatsAppCommand } from '../services/whatsapp/protocol';
 
 export const QUEUE_NAMES = {
   priceCheck: 'price-check',
   notification: 'notification',
+  /** Commands for the one worker that holds the WhatsApp connection. */
+  whatsapp: 'whatsapp',
 } as const;
 
 export interface PriceCheckJobData {
@@ -21,6 +24,12 @@ export interface NotificationJobData {
   alertId: string;
   userId: string;
   productId: string;
+}
+
+export interface WhatsAppJobData {
+  command: WhatsAppCommand;
+  /** Epoch ms. The sender has stopped waiting after this, so the command is dropped. */
+  deadline: number;
 }
 
 const queues = new Map<string, Queue>();
@@ -45,6 +54,9 @@ export const priceCheckQueue = (): Queue<PriceCheckJobData> =>
 
 export const notificationQueue = (): Queue<NotificationJobData> =>
   getQueue<NotificationJobData>(QUEUE_NAMES.notification);
+
+export const whatsappQueue = (): Queue<WhatsAppJobData> =>
+  getQueue<WhatsAppJobData>(QUEUE_NAMES.whatsapp);
 
 /**
  * Enqueues a price check.

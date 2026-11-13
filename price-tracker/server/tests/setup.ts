@@ -39,6 +39,7 @@ jest.mock('../src/queues', () => {
     ...actual,
     priceCheckQueue: jest.fn(),
     notificationQueue: jest.fn(),
+    whatsappQueue: jest.fn(),
     enqueuePriceCheck: jest.fn(async () => 'test-job-id'),
     enqueueNotification: jest.fn(async () => 'test-notify-id'),
     closeQueues: jest.fn(async () => undefined),

@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import { z } from 'zod';
+import { DELIVERY_CHANNELS } from '../config/constants';
 import { isValidTimezone } from '../utils/time';
 
 export const objectId = z
@@ -13,11 +14,20 @@ export const pagination = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-/** E.164, which is what Twilio requires. */
+/** E.164, e.g. +919876543210. Spaces, dashes and brackets are tolerated and removed. */
 export const phoneNumber = z
   .string()
   .trim()
-  .regex(/^\+[1-9]\d{7,14}$/, 'Enter the number in international format, e.g. +919876543210');
+  .transform((value) => value.replace(/[\s()-]/g, ''))
+  .pipe(
+    z.string().regex(/^\+[1-9]\d{7,14}$/, 'Enter the number in international format, e.g. +919876543210'),
+  );
+
+/** A set of delivery channels, each at most once. Empty means "no notifications". */
+export const deliveryChannels = z
+  .array(z.enum(DELIVERY_CHANNELS))
+  .max(DELIVERY_CHANNELS.length)
+  .refine((channels) => new Set(channels).size === channels.length, 'Choose each channel once');
 
 /** Percentage-drop alert threshold; 0 switches the rule off. */
 export const dropPercent = z

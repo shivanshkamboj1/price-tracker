@@ -12,6 +12,7 @@ import '../models/MarketplaceSession';
 import '../models/PriceHistory';
 import '../models/Product';
 import '../models/User';
+import '../models/WhatsApp';
 
 /**
  * Builds every index declared in the schemas. Production runs with

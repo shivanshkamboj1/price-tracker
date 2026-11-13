@@ -3,13 +3,15 @@ import { logger } from '../../config/logger';
 import { LogNotificationService } from './LogNotificationService';
 import { TelegramNotificationService } from './TelegramNotificationService';
 import { TwilioNotificationService } from './TwilioNotificationService';
+import { WhatsAppNotificationService } from './WhatsAppNotificationService';
 import type { DeliveryResult, NotificationService, PriceAlertPayload } from './types';
 
 let instance: NotificationService | undefined;
 let telegram: TelegramNotificationService | undefined;
+let whatsapp: WhatsAppNotificationService | undefined;
 
 /**
- * Resolves the phone-number transport once per process: Twilio when it is
+ * Resolves the SMS / call transport once per process: Twilio when it is
  * configured, otherwise a logging transport so local development and tests work
  * without credentials.
  */
@@ -26,10 +28,21 @@ export function telegramService(): TelegramNotificationService {
   return telegram;
 }
 
+export function whatsappService(): WhatsAppNotificationService {
+  whatsapp ??= new WhatsAppNotificationService();
+  return whatsapp;
+}
+
 /** Sends a price alert through whichever transport owns its channel. */
 export function deliverPriceAlert(payload: PriceAlertPayload): Promise<DeliveryResult> {
-  if (payload.channel === 'telegram') return telegramService().sendPriceAlert(payload);
-  return notificationService().sendPriceAlert({ ...payload, channel: payload.channel });
+  switch (payload.channel) {
+    case 'telegram':
+      return telegramService().sendPriceAlert(payload);
+    case 'whatsapp':
+      return whatsappService().sendPriceAlert(payload);
+    default:
+      return notificationService().sendPriceAlert({ ...payload, channel: payload.channel });
+  }
 }
 
 /** Test seams. */

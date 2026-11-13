@@ -4,7 +4,7 @@ import { listAdapters } from '../adapters/factory';
 import { CircuitBreaker } from '../adapters/http/circuitBreaker';
 import { JobLog } from '../models/JobLog';
 import { Alert } from '../models/Alert';
-import { notificationQueue, priceCheckQueue } from '../queues';
+import { notificationQueue, priceCheckQueue, whatsappQueue } from '../queues';
 import { DAY_MS } from '../utils/time';
 
 export interface QueueHealth {
@@ -44,7 +44,7 @@ export interface SystemHealth {
 }
 
 async function queueHealth(): Promise<QueueHealth[]> {
-  const queues = [priceCheckQueue(), notificationQueue()];
+  const queues = [priceCheckQueue(), notificationQueue(), whatsappQueue()];
   return Promise.all(
     queues.map(async (queue) => {
       const counts = await queue.getJobCounts(

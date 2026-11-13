@@ -4,14 +4,17 @@ import './config/runtime';
 
 import { connectDatabase, disconnectDatabase } from './config/db';
 import { closeRedis } from './config/redis';
-import { env } from './config/env';
+import { env, whatsappEnabled } from './config/env';
 import { logger } from './config/logger';
 import { closeQueues } from './queues';
+import { closeWhatsAppBridge } from './services/whatsapp/bridge';
+import { startWhatsAppOwner } from './services/whatsapp/owner';
 import { createNotificationWorker } from './workers/notificationWorker';
 import { createPriceWorker } from './workers/priceWorker';
 
 /**
- * Worker process. Runs the price-check and notification workers.
+ * Worker process. Runs the price-check and notification workers, and — in
+ * exactly one worker at a time — the WhatsApp connection.
  *
  * It is stateless and horizontally scalable: run as many replicas as needed
  * without changing any code. Politeness towards marketplaces is enforced in
@@ -22,6 +25,7 @@ async function main(): Promise<void> {
 
   const priceWorker = createPriceWorker();
   const notificationWorker = createNotificationWorker();
+  const whatsappOwner = whatsappEnabled ? startWhatsAppOwner() : null;
 
   logger.info(
     { concurrency: env.WORKER_CONCURRENCY, marketplaceRpm: env.MARKETPLACE_RPM },
@@ -32,7 +36,10 @@ async function main(): Promise<void> {
     logger.info({ signal }, 'worker shutting down');
     // `close()` waits for in-flight jobs so a deploy never abandons a check.
     await Promise.allSettled([priceWorker.close(), notificationWorker.close()]);
-    await Promise.allSettled([closeQueues(), disconnectDatabase(), closeRedis()]);
+    // Closes the WhatsApp connection without unlinking, so another worker can take it over.
+    await whatsappOwner?.stop();
+    await Promise.allSettled([closeWhatsAppBridge(), closeQueues()]);
+    await Promise.allSettled([disconnectDatabase(), closeRedis()]);
     process.exit(0);
   };
 

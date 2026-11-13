@@ -4,14 +4,14 @@ import {
   AVAILABILITIES,
   CHECK_ERROR_KINDS,
   CURRENCY_DEFAULT,
+  DELIVERY_CHANNELS,
   MARKETPLACES,
-  NOTIFICATION_CHANNELS,
   PRODUCT_STATUSES,
   type AlertMode,
   type Availability,
   type CheckErrorKind,
+  type DeliveryChannel,
   type Marketplace,
-  type NotificationChannel,
   type ProductStatus,
   type SmartAlertType,
 } from '../config/constants';
@@ -50,8 +50,11 @@ export interface IProduct {
   lastCheckedAt?: Date;
   lastPriceChangedAt?: Date;
 
-  /** Per-product overrides; fall back to the user's preferences when unset. */
-  notificationChannel?: NotificationChannel;
+  /**
+   * Per-product overrides; fall back to the user's preferences when unset.
+   * An empty channel list means "never notify about this product".
+   */
+  notificationChannels?: DeliveryChannel[];
   alertMode?: AlertMode;
 
   /** Set when the target is breached, cleared once the price rises above target. */
@@ -109,7 +112,8 @@ const productSchema = new Schema<IProduct>(
     lastCheckedAt: { type: Date },
     lastPriceChangedAt: { type: Date },
 
-    notificationChannel: { type: String, enum: NOTIFICATION_CHANNELS },
+    // `default: undefined` keeps "not set" distinct from "set to no channels".
+    notificationChannels: { type: [{ type: String, enum: DELIVERY_CHANNELS }], default: undefined },
     alertMode: { type: String, enum: ALERT_MODES },
 
     alertArmed: { type: Boolean, default: false },
@@ -175,3 +179,24 @@ productSchema.index(
 productSchema.index({ userId: 1, comparisonGroup: 1 }, { sparse: true });
 
 export const Product: Model<IProduct> = model<IProduct>('Product', productSchema);
+
+/**
+ * One-off data fix: products used to override a single `notificationChannel`
+ * ('none' meaning off). Rewrites it as the `notificationChannels` list. Idempotent.
+ */
+export async function migrateLegacyProductChannel(): Promise<number> {
+  const result = await Product.collection.updateMany(
+    { notificationChannel: { $type: 'string' } },
+    [
+      {
+        $set: {
+          notificationChannels: {
+            $cond: [{ $eq: ['$notificationChannel', 'none'] }, [], ['$notificationChannel']],
+          },
+        },
+      },
+      { $unset: 'notificationChannel' },
+    ],
+  );
+  return result.modifiedCount;
+}

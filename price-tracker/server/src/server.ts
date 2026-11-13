@@ -8,6 +8,7 @@ import { closeRedis } from './config/redis';
 import { env } from './config/env';
 import { logger } from './config/logger';
 import { closeQueues } from './queues';
+import { closeWhatsAppBridge } from './services/whatsapp/bridge';
 
 /**
  * API process.
@@ -28,7 +29,8 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'api shutting down');
     server.close();
-    await Promise.allSettled([closeQueues(), disconnectDatabase(), closeRedis()]);
+    await Promise.allSettled([closeWhatsAppBridge(), closeQueues()]);
+    await Promise.allSettled([disconnectDatabase(), closeRedis()]);
     process.exit(0);
   };
 

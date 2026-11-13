@@ -9,6 +9,7 @@ import type { ProductSnapshot } from '../adapters/types';
 import { Product, type ProductDocument } from '../models/Product';
 import { JobLog } from '../models/JobLog';
 import { User } from '../models/User';
+import { getLinkedWhatsAppAccount } from '../models/WhatsApp';
 import { AdapterError, describeError } from '../utils/errors';
 import { backoffMinutes, minutesFromNow, nextCheckDate } from '../utils/time';
 import { lockKeys, withLock } from '../utils/lock';
@@ -17,7 +18,7 @@ import { recordPricePoint } from './history.service';
 import {
   createPendingAlert,
   evaluateAlert,
-  hasDestinationFor,
+  hasAnyDestination,
   resolveAlertSettings,
 } from './alert.service';
 import { getDecryptedSession } from './marketplaceSession.service';
@@ -252,8 +253,13 @@ async function maybeRaiseAlert(
     return false;
   }
 
-  const { channel, alertMode, rules } = resolveAlertSettings(product, user);
+  const { channels, alertMode, rules } = resolveAlertSettings(product, user);
   const dropFromPrice = product.dropReferencePrice;
+  // WhatsApp needs a linked sending account as well as recipients.
+  const whatsappLinked =
+    channels.includes('whatsapp') && (user.whatsappRecipients?.length ?? 0) > 0
+      ? Boolean(await getLinkedWhatsAppAccount())
+      : false;
 
   const decision = evaluateAlert({
     price,
@@ -262,8 +268,8 @@ async function maybeRaiseAlert(
     alertArmed: product.alertArmed,
     lastAlertAt: product.lastAlertAt,
     alertMode,
-    channel,
-    hasDestination: hasDestinationFor(channel, user),
+    channels,
+    hasDestination: hasAnyDestination(channels, user, { whatsappLinked }),
     minIntervalMinutes: user.notificationPrefs.minIntervalMinutes,
     quietHours: user.notificationPrefs.quietHours,
     timezone: user.timezone,
@@ -276,11 +282,11 @@ async function maybeRaiseAlert(
 
   if (decision.shouldDisarm) product.alertArmed = false;
   product.dropReferencePrice = decision.dropReferencePrice;
-  if (!decision.shouldAlert || price === null || channel === 'none') {
+  if (!decision.shouldAlert || price === null) {
     log.info(
       {
-        reason: decision.reason ?? (channel === 'none' ? 'channel_none' : undefined),
-        channel,
+        reason: decision.reason,
+        channels,
         price,
         targetPrice: product.targetPrice,
       },
@@ -289,7 +295,7 @@ async function maybeRaiseAlert(
     return false;
   }
 
-  const alert = await createPendingAlert(product, price, channel, {
+  const alert = await createPendingAlert(product, price, channels, {
     reasons: decision.reasons,
     dropFromPrice,
     previousLowestPrice: previous.lowestPrice,
@@ -303,7 +309,7 @@ async function maybeRaiseAlert(
     decision.delayMs,
   );
   log.info(
-    { alertId: alert._id.toString(), reasons: decision.reasons, channel, delayMs: decision.delayMs },
+    { alertId: alert._id.toString(), reasons: decision.reasons, channels, delayMs: decision.delayMs },
     'alert queued for delivery',
   );
 

@@ -1,14 +1,23 @@
-import { MARKETPLACE_LABEL, type AlertDeliveryStatus, type NotificationChannel } from '../config/constants';
-import { Alert, type AlertDelivery } from '../models/Alert';
+import { MARKETPLACE_LABEL, type AlertDeliveryStatus, type DeliveryChannel } from '../config/constants';
+import { Alert, alertChannels, type AlertDelivery } from '../models/Alert';
 import { Product } from '../models/Product';
 import { User, type IUser } from '../models/User';
+import { getLinkedWhatsAppAccount } from '../models/WhatsApp';
+import { fingerprint } from '../utils/crypto';
 import { deliverPriceAlert, type PriceAlertPayload } from './notification';
 
 /** Where one copy of an alert goes. `key` is what gets stored; `to` is never persisted. */
 interface Destination {
   key: string;
+  channel: DeliveryChannel;
   to: string;
   label: string;
+}
+
+/** A chosen channel with nobody to send to, and why. */
+interface Unreachable {
+  channel: DeliveryChannel;
+  reason: string;
 }
 
 /** Thrown after the alert is saved, so BullMQ retries the destinations that failed. */
@@ -26,23 +35,78 @@ export interface DeliveryOutcome {
   failed: number;
 }
 
-function destinationsFor(
-  channel: NotificationChannel,
-  user: Pick<IUser, 'phone'> & { telegramChats?: IUser['telegramChats'] },
-): Destination[] {
-  if (channel === 'none') return [];
-  if (channel === 'telegram') {
-    return (user.telegramChats ?? []).map((chat) => ({
-      key: `tg:${chat.chatId}`,
-      to: chat.chatId,
-      label: chat.chatTitle ?? 'a Telegram chat',
-    }));
+export const CHANNEL_NAME: Record<DeliveryChannel, string> = {
+  whatsapp: 'WhatsApp',
+  telegram: 'Telegram',
+  sms: 'SMS',
+  call: 'Phone call',
+};
+
+type DeliveryUser = Pick<IUser, 'phone'> & {
+  telegramChats?: IUser['telegramChats'];
+  whatsappRecipients?: IUser['whatsappRecipients'];
+};
+
+function plan(
+  channels: DeliveryChannel[],
+  user: DeliveryUser,
+  whatsappLinked: boolean,
+): { destinations: Destination[]; unreachable: Unreachable[] } {
+  const destinations: Destination[] = [];
+  const unreachable: Unreachable[] = [];
+
+  for (const channel of channels) {
+    switch (channel) {
+      case 'telegram': {
+        const chats = user.telegramChats ?? [];
+        if (chats.length === 0) unreachable.push({ channel, reason: 'no Telegram chat is connected' });
+        for (const chat of chats) {
+          destinations.push({
+            key: `tg:${chat.chatId}`,
+            channel,
+            to: chat.chatId,
+            label: chat.chatTitle ?? 'a Telegram chat',
+          });
+        }
+        break;
+      }
+      case 'whatsapp': {
+        const recipients = user.whatsappRecipients ?? [];
+        if (!whatsappLinked) {
+          unreachable.push({ channel, reason: 'no WhatsApp account is linked to send from' });
+        } else if (recipients.length === 0) {
+          unreachable.push({ channel, reason: 'no WhatsApp numbers have been added' });
+        } else {
+          for (const recipient of recipients) {
+            destinations.push({
+              key: `wa:${fingerprint(recipient.phone)}`,
+              channel,
+              to: recipient.jid ?? recipient.phone,
+              label: recipient.name ? `${recipient.name} on WhatsApp` : `${recipient.phone} on WhatsApp`,
+            });
+          }
+        }
+        break;
+      }
+      default:
+        if (user.phone) {
+          destinations.push({
+            key: channel,
+            channel,
+            to: user.phone,
+            label: channel === 'sms' ? 'your phone by SMS' : 'your phone by call',
+          });
+        } else {
+          unreachable.push({ channel, reason: 'no mobile number is set' });
+        }
+    }
   }
-  return user.phone ? [{ key: 'phone', to: user.phone, label: 'your phone' }] : [];
+  return { destinations, unreachable };
 }
 
 const plain = (d: AlertDelivery): AlertDelivery => ({
   destination: d.destination,
+  channel: d.channel,
   status: d.status,
   providerMessageId: d.providerMessageId,
   failureReason: d.failureReason,
@@ -50,12 +114,13 @@ const plain = (d: AlertDelivery): AlertDelivery => ({
 });
 
 /**
- * Delivers one alert to every destination of its channel that has not had it yet.
+ * Delivers one alert to every destination, on every channel, that has not had
+ * it yet: each Telegram chat, each WhatsApp number, the phone for SMS or a call.
  *
  * Each destination's outcome is recorded on the alert, so when a retry runs it
- * only messages the chats that failed — nobody gets the same alert twice. The
- * alert counts as `sent` once any destination has it; failures for the rest are
- * listed in `failureReason`.
+ * only messages the ones that failed — nobody gets the same alert twice. The
+ * alert counts as `sent` once any destination has it; failures for the rest,
+ * and channels with nobody to send to, are listed in `failureReason`.
  *
  * Throws `RetryableDeliveryError` (after saving) when a failure might clear up
  * on its own, which hands the retry schedule to BullMQ.
@@ -80,14 +145,18 @@ export async function deliverAlert(alertId: string): Promise<DeliveryOutcome> {
     return skipped(alert.failureReason);
   }
 
-  const channel = alert.channel;
-  const destinations = destinationsFor(channel, user);
-  if (channel === 'none' || destinations.length === 0) {
+  const channels = alertChannels(alert);
+  const whatsappLinked =
+    channels.includes('whatsapp') && (user.whatsappRecipients?.length ?? 0) > 0
+      ? Boolean(await getLinkedWhatsAppAccount())
+      : false;
+  const { destinations, unreachable } = plan(channels, user, whatsappLinked);
+  const unreachableText = unreachable.map((u) => `${CHANNEL_NAME[u.channel]}: ${u.reason}`);
+
+  if (destinations.length === 0) {
     alert.status = 'skipped';
     alert.failureReason =
-      alert.channel === 'telegram'
-        ? 'No Telegram chat is connected to this account'
-        : 'No delivery channel is configured for this account';
+      unreachableText.join('; ').slice(0, 512) || 'Notifications are turned off for this alert';
     await alert.save();
     return skipped(alert.failureReason);
   }
@@ -97,8 +166,7 @@ export async function deliverAlert(alertId: string): Promise<DeliveryOutcome> {
   const pending = destinations.filter((d) => !delivered.has(d.key));
   if (pending.length === 0) return skipped('already delivered');
 
-  const payload: Omit<PriceAlertPayload, 'to'> = {
-    channel,
+  const base: Omit<PriceAlertPayload, 'to' | 'channel'> = {
     reasons: alert.reasons?.length ? [...alert.reasons] : [alert.type],
     dropFromPrice: alert.dropFromPrice,
     previousLowestPrice: alert.previousLowestPrice,
@@ -114,7 +182,7 @@ export async function deliverAlert(alertId: string): Promise<DeliveryOutcome> {
   const results = await Promise.all(
     pending.map(async (destination) => ({
       destination,
-      result: await deliverPriceAlert({ ...payload, to: destination.to }),
+      result: await deliverPriceAlert({ ...base, channel: destination.channel, to: destination.to }),
     })),
   );
 
@@ -124,6 +192,7 @@ export async function deliverAlert(alertId: string): Promise<DeliveryOutcome> {
     ...previous.filter((d) => !pendingKeys.has(d.destination)),
     ...results.map(({ destination, result }) => ({
       destination: destination.key,
+      channel: destination.channel,
       status: result.status,
       providerMessageId: result.providerMessageId,
       failureReason: result.failureReason?.slice(0, 512),
@@ -131,8 +200,8 @@ export async function deliverAlert(alertId: string): Promise<DeliveryOutcome> {
     })),
   ];
 
-  // Summarise over the destinations that exist now; a chat unlinked since the
-  // last attempt no longer counts.
+  // Summarise over the destinations that exist now; a chat or number removed
+  // since the last attempt no longer counts.
   const labels = new Map(destinations.map((d) => [d.key, d.label]));
   const current = deliveries.filter((d) => labels.has(d.destination));
   const sent = current.filter((d) => d.status === 'sent');
@@ -145,15 +214,16 @@ export async function deliverAlert(alertId: string): Promise<DeliveryOutcome> {
     alert.sentAt ??= attemptedAt;
     alert.providerMessageId = sent[0]!.providerMessageId;
   }
-  alert.failureReason =
-    failed.length === 0
-      ? undefined
-      : destinations.length === 1
-        ? failed[0]!.failureReason
-        : failed
-            .map((d) => `Not delivered to ${labels.get(d.destination)}: ${d.failureReason ?? d.status}`)
-            .join('; ')
-            .slice(0, 512);
+
+  const problems = [
+    ...(destinations.length === 1 && unreachable.length === 0
+      ? failed.map((d) => d.failureReason ?? d.status)
+      : failed.map(
+          (d) => `Not delivered to ${labels.get(d.destination)}: ${d.failureReason ?? d.status}`,
+        )),
+    ...unreachableText,
+  ];
+  alert.failureReason = problems.length ? problems.join('; ').slice(0, 512) : undefined;
   await alert.save();
 
   const retryable = results.filter(

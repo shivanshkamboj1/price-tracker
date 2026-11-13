@@ -16,6 +16,10 @@ import {
   telegramTestSchema,
   updateAlertSchema,
   updateProfileSchema,
+  whatsappLinkSchema,
+  whatsappRecipientParamSchema,
+  whatsappRecipientSchema,
+  whatsappTestSchema,
 } from '../validation/user.schema';
 import { authRouter } from './auth.routes';
 import { productRouter } from './product.routes';
@@ -79,6 +83,38 @@ userRouter.delete(
   csrfProtection,
   validate({ params: telegramChatParamSchema }),
   user.telegramRemoveChat,
+);
+userRouter.get('/channels', user.channels);
+// Polled every couple of seconds while linking, so only the global limiter applies.
+userRouter.get('/whatsapp', user.whatsappStatus);
+userRouter.post(
+  '/whatsapp/link',
+  writeLimiter,
+  csrfProtection,
+  validate({ body: whatsappLinkSchema }),
+  user.whatsappLink,
+);
+userRouter.delete('/whatsapp/link', csrfProtection, user.whatsappCancelLink);
+userRouter.delete('/whatsapp', csrfProtection, user.whatsappUnlink);
+userRouter.post(
+  '/whatsapp/recipients',
+  writeLimiter,
+  csrfProtection,
+  validate({ body: whatsappRecipientSchema }),
+  user.whatsappAddRecipient,
+);
+userRouter.delete(
+  '/whatsapp/recipients/:recipientId',
+  csrfProtection,
+  validate({ params: whatsappRecipientParamSchema }),
+  user.whatsappRemoveRecipient,
+);
+userRouter.post(
+  '/whatsapp/test',
+  writeLimiter,
+  csrfProtection,
+  validate({ body: whatsappTestSchema }),
+  user.whatsappTest,
 );
 userRouter.get('/marketplace-sessions', user.sessions);
 userRouter.post(

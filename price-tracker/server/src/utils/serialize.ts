@@ -1,4 +1,5 @@
-import type { IAlert } from '../models/Alert';
+import type { AlertDeliveryStatus, DeliveryChannel } from '../config/constants';
+import { alertChannels, type IAlert } from '../models/Alert';
 import type { IPriceHistory } from '../models/PriceHistory';
 import type { IProduct } from '../models/Product';
 import type { PriceStats } from '../services/history.service';
@@ -37,7 +38,8 @@ export interface ProductDto {
   nextCheckAt: string | null;
   lastCheckedAt: string | null;
   lastPriceChangedAt: string | null;
-  notificationChannel: string | null;
+  /** Per-product channel override; null means the account's channels apply. */
+  notificationChannels: string[] | null;
   alertMode: string | null;
   alertArmed: boolean;
   alertCount: number;
@@ -87,7 +89,7 @@ export function productToDto(product: IProduct): ProductDto {
     nextCheckAt: product.nextCheckAt?.toISOString() ?? null,
     lastCheckedAt: product.lastCheckedAt?.toISOString() ?? null,
     lastPriceChangedAt: product.lastPriceChangedAt?.toISOString() ?? null,
-    notificationChannel: product.notificationChannel ?? null,
+    notificationChannels: product.notificationChannels ? [...product.notificationChannels] : null,
     alertMode: product.alertMode ?? null,
     alertArmed: product.alertArmed,
     alertCount: product.alertCount,
@@ -144,6 +146,29 @@ type PopulatedProduct = Pick<IProduct, 'title' | 'imageUrl' | 'marketplace' | 'p
   _id: unknown;
 };
 
+/**
+ * One line per channel: `sent` when anyone on it got the alert, `failed` when
+ * an attempt failed and nobody got it, `skipped` when nobody could be reached.
+ */
+function channelOutcomes(
+  alert: IAlert,
+): Array<{ channel: DeliveryChannel; status: AlertDeliveryStatus }> {
+  const deliveries = alert.deliveries ?? [];
+  const channels = alertChannels(alert);
+  return channels.map((channel) => {
+    // Older alerts' deliveries have no channel: they belonged to the only one.
+    const mine = deliveries.filter((d) => (d.channel ?? channels[0]) === channel);
+    if (mine.some((d) => d.status === 'sent')) return { channel, status: 'sent' as const };
+    if (mine.some((d) => d.status === 'failed')) return { channel, status: 'failed' as const };
+    if (mine.length > 0 || alert.status !== 'pending') {
+      // No per-destination record (older alerts): the alert's own status is the channel's.
+      const status = mine.length === 0 && channels.length === 1 ? alert.status : 'skipped';
+      return { channel, status };
+    }
+    return { channel, status: 'pending' as const };
+  });
+}
+
 export function alertToDto(alert: IAlert & { productId: unknown }) {
   const populated =
     alert.productId && typeof alert.productId === 'object' && 'title' in alert.productId
@@ -169,7 +194,8 @@ export function alertToDto(alert: IAlert & { productId: unknown }) {
     dropFromPrice: money(alert.dropFromPrice),
     previousLowestPrice: money(alert.previousLowestPrice),
     currency: alert.currency,
-    channel: alert.channel,
+    channels: alertChannels(alert),
+    channelOutcomes: channelOutcomes(alert),
     status: alert.status,
     state: alert.state,
     message: alert.message,

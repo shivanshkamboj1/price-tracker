@@ -4,16 +4,23 @@ import {
   ALERT_STATES,
   ALERT_TYPES,
   CURRENCY_DEFAULT,
-  NOTIFICATION_CHANNELS,
+  DELIVERY_CHANNELS,
+  LEGACY_NOTIFICATION_CHANNELS,
   type AlertDeliveryStatus,
   type AlertState,
   type AlertType,
-  type NotificationChannel,
+  type DeliveryChannel,
+  type LegacyNotificationChannel,
 } from '../config/constants';
 
 export interface AlertDelivery {
-  /** `tg:<chatId>` for Telegram, `phone` for Twilio channels — never the number itself. */
+  /**
+   * `tg:<chatId>` for Telegram, `wa:<fingerprint>` for WhatsApp, `sms` / `call`
+   * for Twilio — never a phone number itself. (`phone` on older alerts.)
+   */
   destination: string;
+  /** Absent on alerts delivered before several channels were supported. */
+  channel?: DeliveryChannel;
   status: AlertDeliveryStatus;
   providerMessageId?: string;
   failureReason?: string;
@@ -36,8 +43,11 @@ export interface IAlert {
   /** For `all_time_low`: the previous lowest price. Minor units. */
   previousLowestPrice?: number;
   currency: string;
-  channel: NotificationChannel;
-  /** Delivery outcome. */
+  /** Every channel this alert goes out on. */
+  channels?: DeliveryChannel[];
+  /** The single channel of alerts raised before `channels` existed. */
+  channel?: LegacyNotificationChannel;
+  /** Delivery outcome: `sent` once any destination on any channel has it. */
   status: AlertDeliveryStatus;
   /** Lifecycle of the alert itself. */
   state: AlertState;
@@ -46,7 +56,7 @@ export interface IAlert {
   providerMessageId?: string;
   /**
    * One entry per destination, so a retry only re-sends to the ones that failed.
-   * Telegram alerts can have several; phone channels have one.
+   * Telegram and WhatsApp can have several each; SMS and call have one.
    */
   deliveries?: AlertDelivery[];
   failureReason?: string;
@@ -70,7 +80,8 @@ const alertSchema = new Schema<IAlert>(
     dropFromPrice: { type: Number, min: 0 },
     previousLowestPrice: { type: Number, min: 0 },
     currency: { type: String, default: CURRENCY_DEFAULT, maxlength: 3 },
-    channel: { type: String, enum: NOTIFICATION_CHANNELS, required: true },
+    channels: { type: [{ type: String, enum: DELIVERY_CHANNELS }], default: undefined },
+    channel: { type: String, enum: LEGACY_NOTIFICATION_CHANNELS },
     status: { type: String, enum: ALERT_DELIVERY_STATUSES, default: 'pending' },
     state: { type: String, enum: ALERT_STATES, default: 'triggered' },
     message: { type: String, required: true, maxlength: 2000 },
@@ -80,6 +91,7 @@ const alertSchema = new Schema<IAlert>(
         new Schema<AlertDelivery>(
           {
             destination: { type: String, required: true, maxlength: 64 },
+            channel: { type: String, enum: DELIVERY_CHANNELS },
             status: { type: String, enum: ALERT_DELIVERY_STATUSES, required: true },
             providerMessageId: { type: String, maxlength: 128 },
             failureReason: { type: String, maxlength: 512 },
@@ -111,3 +123,9 @@ alertSchema.index({ productId: 1, createdAt: -1 });
 alertSchema.index({ userId: 1, state: 1, status: 1 });
 
 export const Alert: Model<IAlert> = model<IAlert>('Alert', alertSchema);
+
+/** Channels of an alert, including ones raised before several were supported. */
+export function alertChannels(alert: Pick<IAlert, 'channels' | 'channel'>): DeliveryChannel[] {
+  if (alert.channels) return alert.channels;
+  return alert.channel && alert.channel !== 'none' ? [alert.channel] : [];
+}

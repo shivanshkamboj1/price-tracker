@@ -16,7 +16,7 @@ export interface DeliveryResult {
 }
 
 export interface PriceAlertPayload {
-  /** Phone number for SMS / WhatsApp / call; chat id for Telegram. */
+  /** Phone number for SMS / call; WhatsApp id or number for WhatsApp; chat id for Telegram. */
   to: string;
   channel: DeliveryChannel;
   /** Triggers that fired, highest priority first. Empty is read as `target_reached`. */
@@ -37,17 +37,16 @@ export interface PriceAlertPayload {
 export type PhoneAlertPayload = PriceAlertPayload & { channel: PhoneChannel };
 
 /**
- * Phone-number messaging (Twilio, or the logging stand-in).
+ * SMS and voice calls to the account's phone (Twilio, or the logging stand-in).
  *
  * Nothing outside this folder knows that Twilio exists: the worker asks for a
- * price alert to be delivered and gets back a `DeliveryResult`. Telegram is a
- * separate transport; `deliverPriceAlert` routes between them by channel.
+ * price alert to be delivered and gets back a `DeliveryResult`. Telegram and
+ * WhatsApp are separate transports; `deliverPriceAlert` routes by channel.
  */
 export interface NotificationService {
   readonly name: string;
   isConfigured(): boolean;
   sendSms(message: MessageRequest): Promise<DeliveryResult>;
-  sendWhatsApp(message: MessageRequest): Promise<DeliveryResult>;
   /** Places a voice call and speaks `body`. Use for alerts that must interrupt. */
   sendVoiceCall(message: MessageRequest): Promise<DeliveryResult>;
   sendPriceAlert(payload: PhoneAlertPayload): Promise<DeliveryResult>;

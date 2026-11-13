@@ -4,6 +4,7 @@ import { PriceHistory } from '../../src/models/PriceHistory';
 import { Alert } from '../../src/models/Alert';
 import { JobLog } from '../../src/models/JobLog';
 import { User } from '../../src/models/User';
+import { WHATSAPP_ACCOUNT_ID, WhatsAppAccount } from '../../src/models/WhatsApp';
 import { runPriceCheck } from '../../src/services/priceCheck.service';
 import { runSchedulerTick } from '../../src/scheduler/scheduler';
 import { enqueueNotification, enqueuePriceCheck } from '../../src/queues';
@@ -55,13 +56,16 @@ async function seed(
   productOverrides: Partial<Record<string, unknown>> = {},
   userOverrides: Partial<Record<string, unknown>> = {},
 ): Promise<ProductDocument> {
+  // SMS by default: the logging transport stands in for Twilio, so alerts can go out.
+  const { notificationPrefs, ...rest } = userOverrides;
   const user = await User.create({
     email: `owner${Date.now()}${Math.random()}@example.com`,
     name: 'Owner',
     passwordHash: 'placeholder-hash',
     phone: '+919876543210',
     timezone: 'Asia/Kolkata',
-    ...userOverrides,
+    notificationPrefs: { channels: ['sms'], ...(notificationPrefs as object | undefined) },
+    ...rest,
   });
 
   return Product.create({
@@ -310,7 +314,7 @@ describe('smart alerts', () => {
       {},
       {
         phone: undefined,
-        notificationPrefs: { channel: 'telegram' },
+        notificationPrefs: { channels: ['telegram'] },
         telegramChats: [{ chatId: '5123456789', linkedAt: new Date() }],
       },
     );
@@ -318,11 +322,60 @@ describe('smart alerts', () => {
 
     await check(product, 'tg');
 
-    expect(await Alert.findOne({ productId: product._id })).toMatchObject({ channel: 'telegram' });
+    expect(await Alert.findOne({ productId: product._id })).toMatchObject({ channels: ['telegram'] });
+  });
+
+  it('raises one alert for every chosen channel', async () => {
+    const product = await seed(
+      {},
+      {
+        notificationPrefs: { channels: ['telegram', 'sms', 'whatsapp'] },
+        telegramChats: [{ chatId: '5123456789', linkedAt: new Date() }],
+      },
+    );
+    getProductDetails.mockResolvedValue(snapshot({ price: 1_899_900 }));
+
+    await check(product, 'multi');
+
+    const alerts = await Alert.find({ productId: product._id });
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.channels).toEqual(['telegram', 'sms', 'whatsapp']);
+  });
+
+  it('follows the product channels over the account ones', async () => {
+    const product = await seed(
+      { notificationChannels: [] },
+      { notificationPrefs: { channels: ['sms'] } },
+    );
+    getProductDetails.mockResolvedValue(snapshot({ price: 1_899_900 }));
+
+    const outcome = await check(product, 'muted');
+
+    expect(outcome).toMatchObject({ alerted: false });
+    expect(await Alert.countDocuments({ productId: product._id })).toBe(0);
+  });
+
+  it('holds a WhatsApp-only alert back until an account is linked to send from', async () => {
+    const product = await seed(
+      {},
+      {
+        notificationPrefs: { channels: ['whatsapp'] },
+        whatsappRecipients: [{ phone: '+919812345678', addedAt: new Date() }],
+      },
+    );
+    getProductDetails.mockResolvedValue(snapshot({ price: 1_899_900 }));
+
+    const unlinked = await check(product, 'wa-unlinked');
+    expect(unlinked).toMatchObject({ alerted: false });
+
+    await WhatsAppAccount.create({ _id: WHATSAPP_ACCOUNT_ID, phone: '+15550001111', linkedAt: new Date() });
+    const linked = await check(product, 'wa-linked');
+    expect(linked).toMatchObject({ alerted: true });
+    expect(await Alert.findOne({ productId: product._id })).toMatchObject({ channels: ['whatsapp'] });
   });
 
   it('holds a Telegram alert back until a chat is linked', async () => {
-    const product = await seed({}, { notificationPrefs: { channel: 'telegram' } });
+    const product = await seed({}, { notificationPrefs: { channels: ['telegram'] } });
     getProductDetails.mockResolvedValue(snapshot({ price: 1_899_900 }));
 
     const outcome = await check(product, 'tg-unlinked');

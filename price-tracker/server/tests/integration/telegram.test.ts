@@ -235,18 +235,32 @@ describe('migrateLegacyTelegramChat', () => {
 });
 
 describe('notification settings', () => {
-  it('accepts Telegram as the channel and stores smart alert defaults', async () => {
+  it('accepts several channels at once and stores smart alert defaults', async () => {
     const client = await createTestClient();
 
     const response = await post(client, '/api/user/notification-settings', {
-      channel: 'telegram',
+      channels: ['telegram', 'whatsapp'],
       alertRules: { dropPercent: 15, allTimeLow: true },
     }).expect(200);
 
     expect(response.body.data.notificationPrefs).toMatchObject({
-      channel: 'telegram',
+      channels: ['telegram', 'whatsapp'],
       alertRules: { dropPercent: 15, allTimeLow: true, backInStock: true },
     });
+  });
+
+  it('accepts no channels at all, which turns notifications off', async () => {
+    const client = await createTestClient();
+    const response = await post(client, '/api/user/notification-settings', { channels: [] }).expect(200);
+    expect(response.body.data.notificationPrefs.channels).toEqual([]);
+  });
+
+  it('rejects an unknown or repeated channel', async () => {
+    const client = await createTestClient();
+    await post(client, '/api/user/notification-settings', { channels: ['pigeon'] }).expect(422);
+    await post(client, '/api/user/notification-settings', {
+      channels: ['telegram', 'telegram'],
+    }).expect(422);
   });
 
   it('rejects an out-of-range drop percentage', async () => {

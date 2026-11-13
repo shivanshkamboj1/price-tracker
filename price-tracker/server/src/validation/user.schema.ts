@@ -1,10 +1,10 @@
 import { z } from 'zod';
-import { ALERT_MODES, MARKETPLACES, NOTIFICATION_CHANNELS } from '../config/constants';
-import { dropPercent, pagination, phoneNumber, timezone } from './common';
+import { ALERT_MODES, MARKETPLACES } from '../config/constants';
+import { deliveryChannels, dropPercent, objectId, pagination, phoneNumber, timezone } from './common';
 
+/** `phone` is only used for SMS and call alerts. */
 export const updateProfileSchema = z
   .object({
-    name: z.string().trim().min(1).max(120).optional(),
     phone: phoneNumber.nullable().optional(),
     timezone: timezone.optional(),
   })
@@ -12,7 +12,7 @@ export const updateProfileSchema = z
 
 export const notificationSettingsSchema = z
   .object({
-    channel: z.enum(NOTIFICATION_CHANNELS).optional(),
+    channels: deliveryChannels.optional(),
     alertMode: z.enum(ALERT_MODES).optional(),
     minIntervalMinutes: z.number().int().min(0).max(10080).optional(),
     quietHours: z
@@ -71,3 +71,23 @@ export const telegramChatParamSchema = z.object({ chatId: telegramChatId });
 
 /** Omit `chatId` to test every linked chat. */
 export const telegramTestSchema = z.object({ chatId: telegramChatId.optional() }).strict();
+
+/* -------------------------------- whatsapp -------------------------------- */
+
+/** Link by scanning a QR code, or by typing a pairing code on the sending phone. */
+export const whatsappLinkSchema = z.discriminatedUnion('method', [
+  z.object({ method: z.literal('qr') }).strict(),
+  z.object({ method: z.literal('code'), phone: phoneNumber }).strict(),
+]);
+
+export const whatsappRecipientSchema = z
+  .object({
+    phone: phoneNumber,
+    name: z.string().trim().max(80).optional(),
+  })
+  .strict();
+
+export const whatsappRecipientParamSchema = z.object({ recipientId: objectId });
+
+/** Omit `recipientId` to test every number. */
+export const whatsappTestSchema = z.object({ recipientId: objectId.optional() }).strict();

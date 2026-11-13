@@ -1,9 +1,9 @@
 import { Schema, model, type HydratedDocument, type Model, type Types } from 'mongoose';
 import {
   ALERT_MODES,
-  NOTIFICATION_CHANNELS,
+  DELIVERY_CHANNELS,
   type AlertMode,
-  type NotificationChannel,
+  type DeliveryChannel,
 } from '../config/constants';
 
 export interface QuietHours {
@@ -24,7 +24,8 @@ export interface AlertRules {
 }
 
 export interface NotificationPreferences {
-  channel: NotificationChannel;
+  /** Every channel listed here gets every alert. Empty = no notifications. */
+  channels: DeliveryChannel[];
   /** `once` = one alert per target breach; `always` = alert on every breach. */
   alertMode: AlertMode;
   quietHours: QuietHours;
@@ -50,6 +51,20 @@ export interface TelegramPendingLink {
   expiresAt: Date;
 }
 
+/** Most WhatsApp numbers one account can send alerts to. */
+export const MAX_WHATSAPP_RECIPIENTS = 10;
+
+/** A number that receives WhatsApp alerts from the linked sending account. */
+export interface WhatsAppRecipient {
+  _id: Types.ObjectId;
+  /** E.164, e.g. +919876543210. */
+  phone: string;
+  name?: string;
+  /** The WhatsApp id it resolved to when added; preferred over the number when sending. */
+  jid?: string;
+  addedAt: Date;
+}
+
 export interface IUser {
   _id: Types.ObjectId;
   email: string;
@@ -61,6 +76,8 @@ export interface IUser {
   /** Every chat here receives each Telegram alert: people, groups, or both. */
   telegramChats: TelegramLinkedChat[];
   telegramLink?: TelegramPendingLink;
+  /** Every number here receives each WhatsApp alert. */
+  whatsappRecipients: WhatsAppRecipient[];
   timezone: string;
   notificationPrefs: NotificationPreferences;
   role: 'user' | 'admin';
@@ -94,7 +111,14 @@ const alertRulesSchema = new Schema<AlertRules>(
 
 const notificationPrefsSchema = new Schema<NotificationPreferences>(
   {
-    channel: { type: String, enum: NOTIFICATION_CHANNELS, default: 'whatsapp' },
+    channels: {
+      type: [{ type: String, enum: DELIVERY_CHANNELS }],
+      default: () => ['whatsapp'],
+      validate: {
+        validator: (channels: string[]) => new Set(channels).size === channels.length,
+        message: 'Each channel can be chosen once',
+      },
+    },
     alertMode: { type: String, enum: ALERT_MODES, default: 'once' },
     quietHours: { type: quietHoursSchema, default: () => ({}) },
     minIntervalMinutes: { type: Number, min: 0, max: 10080, default: 360 },
@@ -120,6 +144,13 @@ const telegramLinkSchema = new Schema<TelegramPendingLink>(
   { _id: false },
 );
 
+const whatsappRecipientSchema = new Schema<WhatsAppRecipient>({
+  phone: { type: String, required: true, trim: true, maxlength: 20 },
+  name: { type: String, trim: true, maxlength: 80 },
+  jid: { type: String, maxlength: 64 },
+  addedAt: { type: Date, required: true },
+});
+
 const userSchema = new Schema<IUser>(
   {
     email: {
@@ -143,6 +174,14 @@ const userSchema = new Schema<IUser>(
       },
     },
     telegramLink: { type: telegramLinkSchema, select: false },
+    whatsappRecipients: {
+      type: [whatsappRecipientSchema],
+      default: [],
+      validate: {
+        validator: (recipients: WhatsAppRecipient[]) => recipients.length <= MAX_WHATSAPP_RECIPIENTS,
+        message: `At most ${MAX_WHATSAPP_RECIPIENTS} WhatsApp numbers can receive alerts`,
+      },
+    },
     timezone: { type: String, default: 'Asia/Kolkata' },
     notificationPrefs: { type: notificationPrefsSchema, default: () => ({}) },
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
@@ -191,5 +230,30 @@ export async function migrateLegacyTelegramChat(): Promise<number> {
     },
     { $unset: 'telegram' },
   ]);
+  return result.modifiedCount;
+}
+
+/**
+ * One-off data fix: notification preferences used to hold a single `channel`
+ * ('none' meaning off). Rewrites it as the `channels` list. Idempotent.
+ */
+export async function migrateLegacyNotificationChannel(): Promise<number> {
+  const result = await User.collection.updateMany(
+    { 'notificationPrefs.channel': { $type: 'string' } },
+    [
+      {
+        $set: {
+          'notificationPrefs.channels': {
+            $cond: [
+              { $eq: ['$notificationPrefs.channel', 'none'] },
+              [],
+              ['$notificationPrefs.channel'],
+            ],
+          },
+        },
+      },
+      { $unset: 'notificationPrefs.channel' },
+    ],
+  );
   return result.modifiedCount;
 }

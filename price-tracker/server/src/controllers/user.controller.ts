@@ -12,6 +12,17 @@ import {
   disconnectSession,
   listSessions,
 } from '../services/marketplaceSession.service';
+import { getChannelSummary } from '../services/channels.service';
+import {
+  addWhatsAppRecipient,
+  cancelWhatsAppLink,
+  getWhatsAppStatus,
+  removeWhatsAppRecipient,
+  sendWhatsAppTest,
+  startWhatsAppLink,
+  unlinkWhatsApp,
+} from '../services/whatsapp.service';
+import type { LinkMethod } from '../services/whatsapp/protocol';
 import {
   cancelTelegramLink,
   completeTelegramLink,
@@ -67,6 +78,49 @@ export const telegramCancelLink = asyncHandler(async (req: Request, res: Respons
 export const telegramRemoveChat = asyncHandler<{ chatId: string }>(async (req, res) => {
   const chats = await removeTelegramChat(req.auth!.userId, req.params.chatId);
   return sendOk(res, { chats });
+});
+
+/* -------------------------------- whatsapp -------------------------------- */
+
+export const whatsappStatus = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await getWhatsAppStatus(req.auth!.userId));
+});
+
+export const whatsappLink = asyncHandler<unknown, unknown, LinkMethod>(async (req, res) => {
+  return sendOk(res, await startWhatsAppLink(req.body));
+});
+
+export const whatsappCancelLink = asyncHandler(async (_req: Request, res: Response) => {
+  await cancelWhatsAppLink();
+  return sendOk(res, { cancelled: true });
+});
+
+export const whatsappUnlink = asyncHandler(async (_req: Request, res: Response) => {
+  return sendOk(res, await unlinkWhatsApp());
+});
+
+export const whatsappAddRecipient = asyncHandler<unknown, unknown, { phone: string; name?: string }>(
+  async (req, res) => {
+    const recipients = await addWhatsAppRecipient(req.auth!.userId, req.body);
+    return sendOk(res, { recipients });
+  },
+);
+
+export const whatsappRemoveRecipient = asyncHandler<{ recipientId: string }>(async (req, res) => {
+  const recipients = await removeWhatsAppRecipient(req.auth!.userId, req.params.recipientId);
+  return sendOk(res, { recipients });
+});
+
+export const whatsappTest = asyncHandler<unknown, unknown, { recipientId?: string }>(
+  async (req, res) => {
+    return sendOk(res, await sendWhatsAppTest(req.auth!.userId, req.body?.recipientId));
+  },
+);
+
+/* --------------------------------- channels -------------------------------- */
+
+export const channels = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, { channels: await getChannelSummary(req.auth!.userId) });
 });
 
 /* --------------------- optional marketplace sessions --------------------- */

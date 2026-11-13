@@ -6,13 +6,12 @@ import {
   type AlertType,
   type Availability,
   type DeliveryChannel,
-  type NotificationChannel,
   type SmartAlertType,
 } from '../config/constants';
 import { Alert, type AlertDocument } from '../models/Alert';
 import { Product, type IProduct, type ProductDocument } from '../models/Product';
 import type { AlertRules, IUser } from '../models/User';
-import { priceAlertSms, priceAlertWhatsApp } from './notification/templates';
+import { priceAlertWhatsApp } from './notification/templates';
 import { hourInTimezone, hourInWindow, MINUTE_MS } from '../utils/time';
 import { notFound } from '../utils/errors';
 
@@ -42,7 +41,7 @@ export interface AlertDecision {
   reason?: AlertSkipReason;
   /** True when the price climbed back above target and the trigger should re-arm. */
   shouldDisarm: boolean;
-  channel: NotificationChannel;
+  channels: DeliveryChannel[];
   /** Milliseconds to hold the message for, when quiet hours are in effect. */
   delayMs: number;
   /** Baseline the percentage-drop rule should carry into the next check. */
@@ -56,8 +55,9 @@ export interface AlertInputs {
   alertArmed: boolean;
   lastAlertAt?: Date;
   alertMode: AlertMode;
-  channel: NotificationChannel;
-  /** Whether the account can be reached on `channel`: a phone number, or a linked Telegram chat. */
+  /** Every channel the alert should go out on. Empty means notifications are off. */
+  channels: DeliveryChannel[];
+  /** Whether at least one of `channels` can reach somebody (see `hasAnyDestination`). */
   hasDestination: boolean;
   minIntervalMinutes: number;
   quietHours: { enabled: boolean; startHour: number; endHour: number };
@@ -128,7 +128,7 @@ export function evaluateAlert(input: AlertInputs): AlertDecision {
     shouldAlert: false,
     reasons: [],
     shouldDisarm: false,
-    channel: input.channel,
+    channels: input.channels,
     delayMs: 0,
     dropReferencePrice: input.dropReferencePrice,
   };
@@ -188,14 +188,14 @@ export function evaluateAlert(input: AlertInputs): AlertDecision {
   if (reasons.length === 0) return { ...settled, reason: target.reason };
   // Undelivered triggers keep their state (latch, baseline) so they fire once
   // a channel is set up, rather than being silently consumed.
-  if (input.channel === 'none') return { ...settled, reason: 'channel_disabled' };
+  if (input.channels.length === 0) return { ...settled, reason: 'channel_disabled' };
   if (!input.hasDestination) return { ...settled, reason: 'no_destination' };
 
   return {
     shouldAlert: true,
     reasons,
     shouldDisarm: target.shouldDisarm,
-    channel: input.channel,
+    channels: input.channels,
     delayMs: quietHoursDelay(input, now),
     // A delivered drop alert resets the baseline: the next one needs a fresh fall.
     dropReferencePrice: reasons.includes('price_drop') ? price : dropReferencePrice,
@@ -203,18 +203,18 @@ export function evaluateAlert(input: AlertInputs): AlertDecision {
 }
 
 /**
- * Resolves the effective channel, mode and smart rules: per-product override,
+ * Resolves the effective channels, mode and smart rules: per-product override,
  * else the user's default.
  */
 export function resolveAlertSettings(
-  product: Pick<IProduct, 'notificationChannel' | 'alertMode' | 'alertRules'>,
+  product: Pick<IProduct, 'notificationChannels' | 'alertMode' | 'alertRules'>,
   user: Pick<IUser, 'notificationPrefs'>,
-): { channel: NotificationChannel; alertMode: AlertMode; rules: AlertRules } {
+): { channels: DeliveryChannel[]; alertMode: AlertMode; rules: AlertRules } {
   // Accounts created before smart alerts have no `alertRules` stored at all.
   const defaults = user.notificationPrefs.alertRules;
   const overrides = product.alertRules;
   return {
-    channel: product.notificationChannel ?? user.notificationPrefs.channel,
+    channels: [...(product.notificationChannels ?? user.notificationPrefs.channels ?? [])],
     alertMode: product.alertMode ?? user.notificationPrefs.alertMode,
     rules: {
       dropPercent:
@@ -226,14 +226,38 @@ export function resolveAlertSettings(
   };
 }
 
-/** Whether the account has an address for `channel`. */
+export type DestinationUser = Pick<IUser, 'phone'> & {
+  telegramChats?: IUser['telegramChats'];
+  whatsappRecipients?: IUser['whatsappRecipients'];
+};
+
+export interface DestinationContext {
+  /** Whether a WhatsApp account is linked to send from. Assumed when omitted. */
+  whatsappLinked?: boolean;
+}
+
+/** Whether the account has somewhere to send `channel` alerts. */
 export function hasDestinationFor(
-  channel: NotificationChannel,
-  user: Pick<IUser, 'phone'> & { telegramChats?: IUser['telegramChats'] },
+  channel: DeliveryChannel,
+  user: DestinationUser,
+  context: DestinationContext = {},
 ): boolean {
-  if (channel === 'none') return false;
-  if (channel === 'telegram') return (user.telegramChats?.length ?? 0) > 0;
-  return Boolean(user.phone);
+  switch (channel) {
+    case 'telegram':
+      return (user.telegramChats?.length ?? 0) > 0;
+    case 'whatsapp':
+      return context.whatsappLinked !== false && (user.whatsappRecipients?.length ?? 0) > 0;
+    default:
+      return Boolean(user.phone);
+  }
+}
+
+export function hasAnyDestination(
+  channels: DeliveryChannel[],
+  user: DestinationUser,
+  context: DestinationContext = {},
+): boolean {
+  return channels.some((channel) => hasDestinationFor(channel, user, context));
 }
 
 /** Extra numbers the message needs to explain why it was sent. */
@@ -243,15 +267,15 @@ export interface AlertContext {
   previousLowestPrice?: number;
 }
 
+/** The copy kept on the alert for the in-app notification list: the full plain-text version. */
 export function renderAlertMessage(
   product: Pick<IProduct, 'title' | 'marketplace' | 'productUrl' | 'targetPrice' | 'lowestPrice' | 'currency'>,
   price: number,
-  channel: DeliveryChannel,
   context: AlertContext = { reasons: ['target_reached'] },
 ): string {
-  const payload = {
+  return priceAlertWhatsApp({
     to: '',
-    channel,
+    channel: 'whatsapp',
     reasons: context.reasons,
     productTitle: product.title,
     marketplaceLabel: MARKETPLACE_LABEL[product.marketplace],
@@ -262,16 +286,14 @@ export function renderAlertMessage(
     lowestPrice: product.lowestPrice,
     dropFromPrice: context.dropFromPrice,
     previousLowestPrice: context.previousLowestPrice,
-  };
-  // The stored copy is plain text; SMS is the only channel that needs the short form.
-  return channel === 'sms' ? priceAlertSms(payload) : priceAlertWhatsApp(payload);
+  });
 }
 
 /** Persists a triggered alert in `pending` state; delivery happens in its own job. */
 export async function createPendingAlert(
   product: ProductDocument,
   price: number,
-  channel: DeliveryChannel,
+  channels: DeliveryChannel[],
   context: AlertContext = { reasons: ['target_reached'] },
 ): Promise<AlertDocument> {
   return Alert.create({
@@ -286,10 +308,10 @@ export async function createPendingAlert(
       ? context.previousLowestPrice
       : undefined,
     currency: product.currency,
-    channel,
+    channels,
     status: 'pending',
     state: 'triggered',
-    message: renderAlertMessage(product, price, channel, context),
+    message: renderAlertMessage(product, price, context),
   });
 }
 

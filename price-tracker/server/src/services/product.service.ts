@@ -3,8 +3,8 @@ import { env } from '../config/env';
 import {
   CHECK_INTERVAL_CHOICES,
   type AlertMode,
+  type DeliveryChannel,
   type Marketplace,
-  type NotificationChannel,
   type ProductStatus,
 } from '../config/constants';
 import { Product, type IProduct, type ProductDocument } from '../models/Product';
@@ -36,7 +36,7 @@ export interface CreateProductInput {
   targetPrice: number; // major units from the client
   checkInterval: number; // minutes
   nickname?: string;
-  notificationChannel?: NotificationChannel;
+  notificationChannels?: DeliveryChannel[];
   alertMode?: AlertMode;
   alertRules?: AlertRulesInput;
   comparisonGroup?: string;
@@ -48,7 +48,8 @@ export interface UpdateProductInput {
   targetPrice?: number;
   checkInterval?: number;
   nickname?: string | null;
-  notificationChannel?: NotificationChannel;
+  /** `null` clears the override so the account's channels apply. */
+  notificationChannels?: DeliveryChannel[] | null;
   alertMode?: AlertMode;
   alertRules?: AlertRulesInput;
   comparisonGroup?: string | null;
@@ -140,7 +141,7 @@ export async function createProduct(
     nextCheckAt: new Date(),
     status: 'active',
     availability: 'unknown',
-    notificationChannel: input.notificationChannel,
+    notificationChannels: input.notificationChannels,
     alertMode: input.alertMode,
     comparisonGroup: input.comparisonGroup,
   });
@@ -221,7 +222,9 @@ export async function updateProduct(
     product.nextCheckAt = new Date(Date.now() + input.checkInterval * 60_000);
   }
   if (input.nickname !== undefined) product.nickname = input.nickname ?? undefined;
-  if (input.notificationChannel !== undefined) product.notificationChannel = input.notificationChannel;
+  if (input.notificationChannels !== undefined) {
+    product.notificationChannels = input.notificationChannels ?? undefined;
+  }
   if (input.alertMode !== undefined) product.alertMode = input.alertMode;
   if (input.alertRules !== undefined) applyAlertRules(product, input.alertRules);
   if (input.comparisonGroup !== undefined) {

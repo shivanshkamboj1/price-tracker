@@ -1,7 +1,7 @@
 import twilio, { type Twilio } from 'twilio';
 import { env, twilioConfigured } from '../../config/env';
 import { logger } from '../../config/logger';
-import { priceAlertSms, priceAlertVoice, priceAlertWhatsApp } from './templates';
+import { priceAlertSms, priceAlertVoice } from './templates';
 import type {
   DeliveryResult,
   MessageRequest,
@@ -42,41 +42,25 @@ export class TwilioNotificationService implements NotificationService {
     return this.client;
   }
 
-  private async send(
-    from: string | undefined,
-    to: string,
-    body: string,
-    channel: 'sms' | 'whatsapp',
-  ): Promise<DeliveryResult> {
+  async sendSms(message: MessageRequest): Promise<DeliveryResult> {
+    const from = env.TWILIO_PHONE_NUMBER;
     if (!this.isConfigured() || !from) {
-      logger.warn({ channel }, 'twilio is not configured; notification skipped');
+      logger.warn({ channel: 'sms' }, 'twilio is not configured; notification skipped');
       return { status: 'skipped', failureReason: 'Messaging provider is not configured' };
     }
 
     try {
-      const message = await this.getClient().messages.create({ from, to, body });
+      const sent = await this.getClient().messages.create({ from, to: message.to, body: message.body });
       logger.info(
-        { channel, providerMessageId: message.sid, toFingerprint: to.slice(-4) },
+        { channel: 'sms', providerMessageId: sent.sid, toFingerprint: message.to.slice(-4) },
         'notification sent',
       );
-      return { status: 'sent', providerMessageId: message.sid };
+      return { status: 'sent', providerMessageId: sent.sid };
     } catch (err) {
       const reason = err instanceof Error ? err.message : 'Unknown messaging error';
-      logger.error({ channel, err }, 'notification delivery failed');
+      logger.error({ channel: 'sms', err }, 'notification delivery failed');
       return { status: 'failed', failureReason: reason.slice(0, 500) };
     }
-  }
-
-  async sendSms(message: MessageRequest): Promise<DeliveryResult> {
-    return this.send(env.TWILIO_PHONE_NUMBER, message.to, message.body, 'sms');
-  }
-
-  async sendWhatsApp(message: MessageRequest): Promise<DeliveryResult> {
-    const from = env.TWILIO_WHATSAPP_NUMBER
-      ? `whatsapp:${env.TWILIO_WHATSAPP_NUMBER.replace(/^whatsapp:/, '')}`
-      : undefined;
-    const to = `whatsapp:${message.to.replace(/^whatsapp:/, '')}`;
-    return this.send(from, to, message.body, 'whatsapp');
   }
 
   /**
@@ -111,13 +95,8 @@ export class TwilioNotificationService implements NotificationService {
   }
 
   async sendPriceAlert(payload: PhoneAlertPayload): Promise<DeliveryResult> {
-    switch (payload.channel) {
-      case 'whatsapp':
-        return this.sendWhatsApp({ to: payload.to, body: priceAlertWhatsApp(payload) });
-      case 'call':
-        return this.sendVoiceCall({ to: payload.to, body: priceAlertVoice(payload) });
-      default:
-        return this.sendSms({ to: payload.to, body: priceAlertSms(payload) });
-    }
+    return payload.channel === 'call'
+      ? this.sendVoiceCall({ to: payload.to, body: priceAlertVoice(payload) })
+      : this.sendSms({ to: payload.to, body: priceAlertSms(payload) });
   }
 }

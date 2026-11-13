@@ -3,10 +3,9 @@ import {
   ALERT_MODES,
   CHECK_INTERVAL_CHOICES,
   MARKETPLACES,
-  NOTIFICATION_CHANNELS,
   PRODUCT_STATUSES,
 } from '../config/constants';
-import { dropPercent, objectId, pagination, productUrl } from './common';
+import { deliveryChannels, dropPercent, objectId, pagination, productUrl } from './common';
 
 const targetPrice = z
   .number({ invalid_type_error: 'Enter a target price' })
@@ -42,7 +41,8 @@ export const createProductSchema = z.object({
   targetPrice,
   checkInterval: checkInterval.default(360),
   nickname: z.string().trim().max(120).optional(),
-  notificationChannel: z.enum(NOTIFICATION_CHANNELS).optional(),
+  /** Omit to follow the account's channels; `[]` = never notify about this product. */
+  notificationChannels: deliveryChannels.optional(),
   alertMode: z.enum(ALERT_MODES).optional(),
   alertRules: alertRules.optional(),
   comparisonGroup: z.string().trim().max(64).optional(),
@@ -58,7 +58,8 @@ export const updateProductSchema = z
     targetPrice: targetPrice.optional(),
     checkInterval: checkInterval.optional(),
     nickname: z.string().trim().max(120).nullable().optional(),
-    notificationChannel: z.enum(NOTIFICATION_CHANNELS).optional(),
+    /** `null` goes back to the account's channels. */
+    notificationChannels: deliveryChannels.nullable().optional(),
     alertMode: z.enum(ALERT_MODES).optional(),
     alertRules: alertRules.optional(),
     comparisonGroup: z.string().trim().max(64).nullable().optional(),
@@ -69,7 +70,7 @@ export const updateProductSchema = z
 export const productSettingsSchema = z
   .object({
     checkInterval: checkInterval.optional(),
-    notificationChannel: z.enum(NOTIFICATION_CHANNELS).optional(),
+    notificationChannels: deliveryChannels.nullable().optional(),
     alertMode: z.enum(ALERT_MODES).optional(),
     alertRules: alertRules.optional(),
     comparisonGroup: z.string().trim().max(64).nullable().optional(),

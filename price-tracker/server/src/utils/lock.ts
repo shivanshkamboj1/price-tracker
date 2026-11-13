@@ -15,10 +15,19 @@ else
   return 0
 end`;
 
+const EXTEND_SCRIPT = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("pexpire", KEYS[1], ARGV[2])
+else
+  return 0
+end`;
+
 export interface Lock {
   key: string;
   token: string;
   release(): Promise<boolean>;
+  /** Pushes the expiry out by `ttlMs`. False when the lock has already been lost. */
+  extend(ttlMs: number): Promise<boolean>;
 }
 
 export async function acquireLock(key: string, ttlMs: number): Promise<Lock | null> {
@@ -33,6 +42,10 @@ export async function acquireLock(key: string, ttlMs: number): Promise<Lock | nu
     async release() {
       const released = await client.eval(RELEASE_SCRIPT, 1, key, token);
       return released === 1;
+    },
+    async extend(ms: number) {
+      const extended = await client.eval(EXTEND_SCRIPT, 1, key, token, ms);
+      return extended === 1;
     },
   };
 }
@@ -55,4 +68,5 @@ export async function withLock<T>(
 export const lockKeys = {
   productCheck: (productId: string) => `lock:product-check:${productId}`,
   schedulerTick: () => 'lock:scheduler:tick',
+  whatsappOwner: () => 'lock:whatsapp:owner',
 };
